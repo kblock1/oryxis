@@ -98,6 +98,15 @@ fn number_in_badge(number: Option<TabNumber>) -> Option<usize> {
     number.filter(|n| n.in_icon).map(|n| n.value)
 }
 
+/// The badge glyph for a panel chip. One per kind, so the strip reads as
+/// two different surfaces rather than two identically-badged tabs.
+pub(crate) fn panel_icon(kind: crate::state::PanelKind) -> iced::widget::Text<'static> {
+    match kind {
+        crate::state::PanelKind::Settings => iced_fonts::lucide::settings(),
+        crate::state::PanelKind::NetTools => iced_fonts::lucide::radar(),
+    }
+}
+
 /// A SFTP browser tab chip in the strip, styled to match the terminal session
 /// tabs: a rounded folder badge (tinted with the mounted host's accent) + the
 /// label, with the close X *inside* the tab fill as a trailing slot (shown on
@@ -268,7 +277,9 @@ pub(crate) fn sftp_session_tab<'a>(
 /// redaction and no context menu. It carries the app accent and a gear,
 /// which is exactly the vocabulary the toolbar's Settings button already
 /// uses, so the strip entry reads as the same destination.
-pub(crate) fn settings_tab<'a>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn panel_tab<'a>(
+    kind: crate::state::PanelKind,
     label: &'a str,
     is_active: bool,
     // Whether the hovered chip has earned its close X: the reveal waits
@@ -305,7 +316,7 @@ pub(crate) fn settings_tab<'a>(
                 .font(SYSTEM_UI_SEMIBOLD)
                 .color(Color::WHITE)
                 .into(),
-            None => iced_fonts::lucide::settings().size(12).color(Color::WHITE).into(),
+            None => panel_icon(kind).size(12).color(Color::WHITE).into(),
         };
         container(glyph)
             .center_x(Length::Fixed(TAB_ICON_SLOT))
@@ -349,14 +360,14 @@ pub(crate) fn settings_tab<'a>(
                 ..Default::default()
             }
         })
-        .on_press(Message::Tabs(TabsMessage::CloseSettingsTab))
+        .on_press(Message::Tabs(TabsMessage::ClosePanelTab(kind)))
         .into()
     };
     let show_close = is_active || close_revealed;
     // `truncate_label` already reserves the badge + gaps; only the
     // trailing X slot is on top of that. Subtracting the badge again here
     // is what truncated "Settings" to "Sett…" on a min-width chip, so the
-    // reserve has to match `settings_tab_width` exactly.
+    // reserve has to match `panel_tab_width` exactly.
     let label_width = (width - TAB_ICON_SLOT - 4.0).max(0.0);
     let label_text = text(truncate_label(&numbered_label(label, number), label_width))
         .size(12)
@@ -389,7 +400,7 @@ pub(crate) fn settings_tab<'a>(
             .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 2.0 }),
     )
     .width(Length::Fixed(width))
-    .on_press(Message::Navigation(NavigationMessage::ChangeView(View::Settings)))
+    .on_press(Message::Navigation(NavigationMessage::ChangeView(kind.view())))
     .style(move |_, status| {
         let hover_bg: Background = match status {
             BtnStatus::Hovered if !is_active => {
@@ -407,8 +418,8 @@ pub(crate) fn settings_tab<'a>(
     // reads it), so this MouseArea is what makes the tab draggable, not
     // just what reveals the X.
     MouseArea::new(tab_btn)
-        .on_enter(Message::Tabs(TabsMessage::SettingsTabHovered))
-        .on_exit(Message::Tabs(TabsMessage::SettingsTabUnhovered))
+        .on_enter(Message::Tabs(TabsMessage::PanelTabHovered(kind)))
+        .on_exit(Message::Tabs(TabsMessage::PanelTabUnhovered(kind)))
         .into()
 }
 

@@ -209,15 +209,16 @@ pub enum TabsMessage {
     /// threshold (it drives the marching dots), slow below it (it only
     /// has to catch the crossing).
     BusyAnimTick,
-    /// Cursor entered / left the Settings tab. Drives the hover-revealed
-    /// close X, and the flag the press handler reads to arm a reorder
-    /// drag, exactly like `TabHovered` does for a session tab.
-    SettingsTabHovered,
-    SettingsTabUnhovered,
-    /// Close the Settings tab (issue #120). Selecting it goes through
-    /// `NavigationMessage::ChangeView(View::Settings)` instead, so there
-    /// is no matching Select variant.
-    CloseSettingsTab,
+    /// Cursor entered / left a panel tab (Settings, network tools).
+    /// Drives the hover-revealed close X, and the flag the press
+    /// handler reads to arm a reorder drag, exactly like `TabHovered`
+    /// does for a session tab.
+    PanelTabHovered(crate::state::PanelKind),
+    PanelTabUnhovered(crate::state::PanelKind),
+    /// Close a panel tab (issue #120). Selecting one goes through
+    /// `NavigationMessage::ChangeView(kind.view())` instead, so there is
+    /// no matching Select variant.
+    ClosePanelTab(crate::state::PanelKind),
     WindowDrag,
     WindowResizeDrag(iced::window::Direction),
     /// Press on the side-panel editor drawer's edge handle: arms a

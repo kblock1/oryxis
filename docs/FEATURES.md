@@ -295,6 +295,43 @@ coming next, see the [Roadmap](../README.md#roadmap).
   rather than wrapping, and truncated or forged payloads degrade to
   "unknown" instead of nonsense.
 
+## Network tools
+
+Off by default, and while it is off the whole thing is invisible: no
+menu entry, no tab, no way in (Settings > Advanced > Network tools
+turns it on). Switching it back off closes the tab with it.
+
+- **Its own tab, not a sidebar.** The panel opens from the burger menu
+  as a full surface next to Settings, so a lookup you are waiting on
+  does not cost you the terminal you were reading.
+- **DNS.** A, AAAA, CNAME, MX, NS, TXT, SOA and SPF from this machine's
+  own resolvers, each record with its TTL. An address target is looked
+  up in reverse (PTR) instead, and a domain publishing two SPF records
+  is called out as the error receivers treat it as.
+- **Ping and traceroute.** Four echo requests and a hop-by-hop path,
+  driven through the system binaries, with the summary card on top and
+  the tool's own output kept underneath. A missing binary says which
+  package carries it rather than failing silently.
+- **Port test.** Up to 64 ports per run (`22, 80, 443` or `8000-8010`),
+  connected in parallel, reporting open, refused or filtered as three
+  different answers: a service that is down and a firewall that swallows
+  the packet are not the same finding.
+- **HTTP and TLS.** The redirect chain hop by hop (the `http -> https ->
+  www` step that is usually what broke), the response with its headers,
+  and for https the certificate: subject, issuer, validity, days to
+  expiry, the names it covers, and whether the chain your own machine
+  trusts it. A certificate that is expired or self-signed is SHOWN
+  rather than refused, which is the point of looking.
+- **WHOIS.** Follows the referral chain (IANA to the registry to the
+  registrar), so a `.com` answers with the registrar record instead of
+  the near-empty thin one, and keeps the registry's own text behind the
+  copy action.
+- **Blocklists.** Eight public DNSBL zones asked at once for an
+  address, with the listing reason where the zone publishes one.
+  Verdicts are best-effort by construction: the public mirrors
+  rate-limit, so a zone that does not answer is reported as silent
+  rather than counted as clean.
+
 ## tmux session manager
 
 - **The host's tmux sessions in the sidebar.** A tmux tab lists what is

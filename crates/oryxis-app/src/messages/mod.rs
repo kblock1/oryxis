@@ -29,6 +29,8 @@ mod keys;
 pub use keys::KeysMessage;
 mod monitor;
 pub use monitor::MonitorMessage;
+mod net_tools;
+pub use net_tools::NetToolsMessage;
 mod tmux;
 pub use tmux::TmuxMessage;
 mod sidebar_files;
@@ -269,6 +271,12 @@ pub enum Message {
     // so the per-section Clear / Next / Prev controls don't render
     // anymore. Handlers stay wired so we can resurrect a dedicated
     // session-logs surface without re-introducing the messages.
+
+    // Network tools
+    /// The optional network tools panel (DNS, ping, traceroute, port
+    /// test, HTTP/TLS, WHOIS, DNSBL). Hidden behind
+    /// `network_tools_enabled`.
+    NetTools(NetToolsMessage),
 
     // Settings
     // Update (handle_update)

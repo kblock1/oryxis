@@ -244,27 +244,77 @@ impl PendingTabPlacement {
 pub(crate) enum TabRef {
     Terminal(Uuid),
     Sftp(Uuid),
-    /// The Settings tab (issue #120). Carries no id because there is at
-    /// most one: Settings is a single global surface, so a second entry
-    /// would be the same screen twice. `Oryxis::settings_tab_open` says
-    /// whether it is in the strip; `tab_order` says where.
-    Settings,
+    /// A panel tab (issue #120 gave Settings the first one). Carries no
+    /// id because each kind has at most one instance: these are single
+    /// global surfaces, so a second entry would be the same screen
+    /// twice. `Oryxis::panel_tab_open` says whether it is in the strip;
+    /// `tab_order` says where.
+    Panel(PanelKind),
 }
 
-/// Stable synthetic id the Settings tab answers with inside the
-/// uuid-keyed strip machinery (drag / live-slide / reorder). `TabRef`
-/// itself keeps no id, because there is only ever one Settings tab; this
-/// constant is what lets it ride the same reorder code as every other
-/// tab instead of needing a parallel path.
-pub(crate) const SETTINGS_TAB_ID: Uuid = Uuid::from_u128(0x5E11_1465_0000_0000_0000_0000_0000_0001);
+/// A full-screen surface that rides the tab strip instead of the vault
+/// rail. What they have in common is what makes one type serve both:
+/// exactly one instance, no session behind it, no storage vec to index,
+/// and a `View` that owns the whole content area while it is up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum PanelKind {
+    /// Settings (issue #120).
+    Settings,
+    /// The network tools panel, reachable only while the
+    /// `network_tools_enabled` setting is on. Switching that off closes
+    /// the tab, so the strip can never hold a chip for a surface the
+    /// user can no longer open.
+    NetTools,
+}
+
+impl PanelKind {
+    pub(crate) const ALL: [PanelKind; 2] = [PanelKind::Settings, PanelKind::NetTools];
+
+    /// The view this panel shows. One per kind, and the pairing is what
+    /// `ChangeView` uses to decide which chip to mint.
+    pub(crate) fn view(self) -> super::super::View {
+        match self {
+            PanelKind::Settings => super::super::View::Settings,
+            PanelKind::NetTools => super::super::View::NetworkTools,
+        }
+    }
+
+    /// The panel owning `view`, if any. The inverse of [`Self::view`],
+    /// kept next to it so the two cannot drift.
+    pub(crate) fn for_view(view: super::super::View) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.view() == view)
+    }
+
+    /// i18n key for the chip label.
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            PanelKind::Settings => "settings",
+            PanelKind::NetTools => "network_tools",
+        }
+    }
+
+    /// Stable synthetic id this panel answers with inside the uuid-keyed
+    /// strip machinery (drag / live-slide / reorder). `TabRef` itself
+    /// keeps no id, because there is only ever one tab per kind; these
+    /// constants are what let a panel ride the same reorder code as
+    /// every other tab instead of needing a parallel path.
+    pub(crate) fn tab_id(self) -> Uuid {
+        match self {
+            PanelKind::Settings => {
+                Uuid::from_u128(0x5E11_1465_0000_0000_0000_0000_0000_0001)
+            }
+            PanelKind::NetTools => Uuid::from_u128(0x5E11_1465_0000_0000_0000_0000_0000_0002),
+        }
+    }
+}
 
 impl TabRef {
     /// Id used by the reorder machinery. Real for terminal / SFTP tabs,
-    /// the synthetic `SETTINGS_TAB_ID` for Settings.
+    /// the panel's synthetic id for a panel.
     pub(crate) fn strip_id(&self) -> Uuid {
         match self {
             TabRef::Terminal(id) | TabRef::Sftp(id) => *id,
-            TabRef::Settings => SETTINGS_TAB_ID,
+            TabRef::Panel(kind) => kind.tab_id(),
         }
     }
 }

@@ -392,6 +392,7 @@ impl Oryxis {
             m @ (
             SettingsMessage::SettingTogglePerformanceMode
             | SettingsMessage::SettingTogglePerfOverlay
+            | SettingsMessage::SettingToggleNetworkTools
             | SettingsMessage::SettingToggleRemoteDesktop
             | SettingsMessage::SettingToggleCloseToTray
             | SettingsMessage::SettingToggleMinimizeToTray

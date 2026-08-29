@@ -160,6 +160,23 @@ fontdb = "0.24"
 # RtlGetVersion on Windows, SystemVersion.plist on macOS). Serde
 # support is off, the report is plain text.
 os_info = { version = "3", default-features = false }
+# Typed DNS for the network tools panel: the system resolver alone
+# answers A/AAAA and nothing else, and the panel reports MX / TXT / NS /
+# SOA / PTR and the DNSBL zones. Default features are `system-config`
+# (read the host's resolvers) plus `tokio`; every TLS feature stays off,
+# so this pulls in no second crypto provider next to the aws-lc-rs one
+# `main` installs.
+hickory-resolver = "0.26"
+# The network tools panel's certificate probe drives a handshake of its
+# own (reqwest gives no access to the chain a server presented). Default
+# features off: the crypto provider comes from the `rustls` dep above,
+# and a second one would be a second implementation in the binary.
+tokio-rustls = { version = "0.26", default-features = false }
+# Decodes the DER the TLS probe captures during its handshake, so the
+# certificate card can report subject / issuer / SANs / validity. No
+# crypto backend feature: the panel INSPECTS a chain, it never verifies
+# one (see `net_tools::http`).
+x509-parser = "0.18"
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 

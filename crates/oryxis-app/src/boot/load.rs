@@ -553,6 +553,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("perf_overlay") {
                 self.prefs.perf_overlay = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("network_tools_enabled") {
+                self.prefs.network_tools = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("smart_contrast") {
                 self.prefs.smart_contrast = v == "true";
             }

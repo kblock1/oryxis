@@ -250,6 +250,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Advanced, "download_mirror", "download mirror china github custom proxy project"),
     e(S::Advanced, "debug_logging", "debug logging enable log file diagnostics"),
     e(S::Advanced, "perf_overlay", "performance hud overlay fps terminal frames"),
+    e(
+        S::Advanced,
+        "setting_network_tools",
+        "network tools dns ping traceroute port test whois rbl dnsbl tls certificate utilities",
+    ),
     e(S::Advanced, "copy_env_info", "copy environment info report github issue diagnostics"),
     // ── About ──────────────────────────────────────────────────────
     // (the update rows live in `update_entries()`, they don't exist in

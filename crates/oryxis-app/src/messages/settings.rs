@@ -346,6 +346,10 @@ pub enum SettingsMessage {
     SettingToggleTabAccentText,
     SettingTogglePerformanceMode,
     SettingTogglePerfOverlay,
+    /// Toggle the opt-in network tools panel (`network_tools_enabled`).
+    /// Switching it off also closes the panel's tab, so no chip
+    /// survives pointing at a surface that can no longer be opened.
+    SettingToggleNetworkTools,
     /// Toggle the opt-in "remote desktop" feature (`remote_desktop_enabled`).
     SettingToggleRemoteDesktop,
     /// Relaunch the app in place to apply a start-time-only setting (the

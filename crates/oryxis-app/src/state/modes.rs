@@ -266,6 +266,10 @@ pub enum View {
     /// Hosts toolbar's monitor icon, which only renders while the
     /// master `host_monitoring` toggle is on (optional-features rule).
     Monitoring,
+    /// Network tools (DNS, ping, traceroute, port test, HTTP/TLS,
+    /// WHOIS, DNSBL). A panel tab like Settings rather than a vault
+    /// surface, and reachable only while `network_tools_enabled` is on.
+    NetworkTools,
 }
 
 /// One row in the Plugins panel: a cloud-provider plugin and its

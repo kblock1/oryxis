@@ -134,6 +134,10 @@ matching installer. Windows binaries are Authenticode-signed (see
   own, opened from any host.
 - **Session recording.** Encrypted at rest; exports to asciinema `.cast`
   (theme embedded) or plain transcript, output-only by design.
+- **The sysadmin toolbox.** An optional network tools panel (off by
+  default, opens as its own tab): DNS records, ping, traceroute, TCP
+  port test, HTTP redirect chain and certificate inspection, WHOIS, and
+  the public spam blocklists.
 - **Cloud accounts.** AWS, Google Cloud, Azure and Kubernetes discovery
   and connect (EC2, SSM, ECS Exec, GKE, AKS, `kubectl`), shipped as
   signed on-demand plugins.
@@ -266,8 +270,6 @@ tracks it interactively.
 - **Native FIDO2:** talk to security keys directly (USB / NFC) for
   `sk-ssh-ed25519` / `sk-ecdsa-sk`, without delegating the touch to an
   external agent.
-- **Utilities:** an optional network tools panel (DNS, ping /
-  traceroute, port test, TLS check, WHOIS, RBL).
 - **Vault & sync:** one-click relay deploy (the app installs
   `oryxis-relay` on a host from your vault over SSH, with the script
   shown before it runs).

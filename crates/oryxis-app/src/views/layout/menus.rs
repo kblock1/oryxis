@@ -738,6 +738,18 @@ impl Oryxis {
                 Space::new().into()
             },
             item("settings", Message::Navigation(NavigationMessage::ChangeView(View::Settings)), hk_settings),
+            // The network tools panel's only door, and it exists only
+            // while the feature is on (the optional-features rule: off
+            // means no UI at all, not a disabled row).
+            if self.prefs.network_tools {
+                item(
+                    "network_tools",
+                    Message::Navigation(NavigationMessage::ChangeView(View::NetworkTools)),
+                    None,
+                )
+            } else {
+                Space::new().into()
+            },
             sep,
             item("local_shell", Message::Settings(SettingsMessage::OpenLocalShell), hk_local_shell),
             item("new_window", Message::Tabs(TabsMessage::SpawnNewWindow), hk_new_window),

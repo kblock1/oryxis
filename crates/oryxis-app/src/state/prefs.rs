@@ -143,6 +143,11 @@ pub(crate) struct AppPrefs {
     /// the top-right of every pane. Off by default; the `ORYXIS_TERM_PERF`
     /// env var forces it on too. `"perf_overlay"` setting.
     pub(crate) perf_overlay: bool,
+    /// The network tools panel (DNS, ping, traceroute, port test,
+    /// HTTP/TLS, WHOIS, DNSBL). Off by default and, while off, its whole
+    /// UI is hidden: no burger entry, no tab, no way in (the
+    /// optional-features rule). `"network_tools_enabled"` setting.
+    pub(crate) network_tools: bool,
     /// When the foreground and background of a cell render too close
     /// to each other (LS_COLORS' `ow` over a green palette,
     /// PowerShell's `$PSStyle.FileInfo.Directory` blue-on-blue, …),
@@ -573,6 +578,7 @@ impl Default for AppPrefs {
             compiled_highlight_rules: std::sync::Arc::default(),
             performance_mode: false,
             perf_overlay: false,
+            network_tools: false,
             smart_contrast: true,
             bell_mode: crate::util::BellMode::default(),
             clipboard_access: crate::util::ClipboardAccess::default(),

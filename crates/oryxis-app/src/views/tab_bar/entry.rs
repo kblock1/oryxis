@@ -96,7 +96,7 @@ impl Oryxis {
             StripEntry::Terminal(idx) => self.tabs[idx].pinned,
             // Transient by design, so pinning it would promise a
             // persistence it does not have.
-            StripEntry::Settings => false,
+            StripEntry::Panel(_) => false,
         }
     }
 
@@ -120,32 +120,33 @@ impl Oryxis {
         // Terminal and SFTP tabs share one strip; SFTP tabs are active
         // only while the SFTP surface itself is up.
         let sftp_surface = self.active_tab.is_none() && self.active_view == View::Sftp;
-        if entry == StripEntry::Settings {
+        if let StripEntry::Panel(kind) = entry {
             // Same active rule as the SFTP tabs: it owns the strip slot
             // only while its own surface is the one showing.
-            let is_active = self.active_tab.is_none() && self.active_view == View::Settings;
-            let label = crate::i18n::t("settings");
+            let is_active = self.active_tab.is_none() && self.active_view == kind.view();
+            let label = crate::i18n::t(kind.label_key());
             let width = ctx.uniform_w.unwrap_or_else(|| {
                 if ctx.dragging_any {
                     ctx.drag_uniform_w
                 } else if is_active {
                     TAB_NATURAL_WIDTH
                 } else {
-                    settings_tab_width(label, ctx.number_px)
+                    panel_tab_width(label, ctx.number_px)
                 }
             });
             let is_dragging = self
                 .tab_drag
                 .filter(|d| d.active)
-                .map(|d| d.from_id == crate::state::SETTINGS_TAB_ID)
+                .map(|d| d.from_id == kind.tab_id())
                 .unwrap_or(false);
             if is_dragging {
                 return Space::new().width(width).height(TAB_HEIGHT).into();
             }
-            return settings_tab(
+            return panel_tab(
+                kind,
                 label,
                 is_active,
-                self.hover.settings_tab && ctx.close_armed,
+                self.hover.panel_tab == Some(kind) && ctx.close_armed,
                 width,
                 ctx.close_on_right,
                 ctx.solid_fill,
@@ -154,7 +155,7 @@ impl Oryxis {
         }
         let idx = match entry {
             StripEntry::Terminal(i) | StripEntry::Sftp(i) => i,
-            StripEntry::Settings => unreachable!("handled above"),
+            StripEntry::Panel(_) => unreachable!("handled above"),
         };
         if entry == StripEntry::Sftp(idx) {
             let tab = &self.sftp_tabs[idx];
@@ -645,17 +646,20 @@ impl Oryxis {
                 ),
                 ghost_w,
             ))
-        } else if drag.from_id == crate::state::SETTINGS_TAB_ID {
-            // Its own ghost rather than `drag_ghost`: that one derives an
-            // OS badge from a host label, and Settings has no host. The
-            // gear + app accent is the same vocabulary as the chip being
-            // dragged.
-            Some((
-                settings_drag_ghost(crate::i18n::t("settings"), drag_uniform_w),
-                drag_uniform_w,
-            ))
         } else {
-            None
+            // Its own ghost rather than `drag_ghost`: that one derives an
+            // OS badge from a host label, and a panel has no host. The
+            // panel glyph + app accent is the same vocabulary as the chip
+            // being dragged.
+            crate::state::PanelKind::ALL
+                .into_iter()
+                .find(|k| k.tab_id() == drag.from_id)
+                .map(|kind| {
+                    (
+                        panel_drag_ghost(kind, crate::i18n::t(kind.label_key()), drag_uniform_w),
+                        drag_uniform_w,
+                    )
+                })
         }
     }
 }

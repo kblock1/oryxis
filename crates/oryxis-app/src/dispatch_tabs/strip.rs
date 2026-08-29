@@ -93,8 +93,8 @@ impl Oryxis {
                     self.reanchor_connecting_after_filter(connecting_id);
                 }
             }
-            TabsMessage::CloseSettingsTab => {
-                return self.close_settings_tab();
+            TabsMessage::ClosePanelTab(kind) => {
+                return self.close_panel_tab(kind);
             }
             TabsMessage::ToggleTabPin(idx) => {
                 self.overlay = None;
