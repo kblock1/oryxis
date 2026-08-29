@@ -242,10 +242,21 @@ impl Oryxis {
         // convention, so the copy icon reserves no inline width and the
         // card content never shifts when the pointer arrives.
         let overlay: Element<'a, Message> = if self.hover.net_tools_card == Some(idx) {
+            // The TRAILING corner, which is the physical left one under
+            // RTL. `dir_align_x` answers for the leading edge, so this is
+            // its opposite rather than a second call to it; the padding
+            // has to swap sides with it or the icon would hug the frame.
+            let rtl = crate::i18n::is_rtl_layout();
+            let align = if rtl {
+                iced::alignment::Horizontal::Left
+            } else {
+                iced::alignment::Horizontal::Right
+            };
+            let (left, right) = if rtl { (10.0, 0.0) } else { (0.0, 10.0) };
             container(copy_button(idx))
                 .width(Length::Fill)
-                .align_x(iced::alignment::Horizontal::Right)
-                .padding(Padding { top: 8.0, right: 10.0, bottom: 0.0, left: 0.0 })
+                .align_x(align)
+                .padding(Padding { top: 8.0, right, bottom: 0.0, left })
                 .into()
         } else {
             Space::new().into()

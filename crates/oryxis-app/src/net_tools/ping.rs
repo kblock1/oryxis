@@ -52,7 +52,16 @@ pub(crate) async fn probe_ping(target: &str) -> Result<Vec<NetToolCard>, String>
                 .replacen("{loss}", &format!("{:.0}", summary.loss_pct), 1),
         ];
         if let Some((min, avg, max)) = summary.rtt_ms {
-            lines.push(format!("{}: {min:.1} / {avg:.1} / {max:.1} ms", t("net_ping_rtt")));
+            // Sub-millisecond round trips are ordinary on loopback and on
+            // a fast LAN, and one decimal renders all three of them as
+            // "0.0 ms", which reads as a broken measurement rather than a
+            // fast one. The scale follows the numbers.
+            let line = if max < 10.0 {
+                format!("{}: {min:.3} / {avg:.3} / {max:.3} ms", t("net_ping_rtt"))
+            } else {
+                format!("{}: {min:.1} / {avg:.1} / {max:.1} ms", t("net_ping_rtt"))
+            };
+            lines.push(line);
         }
         let status = match summary.received {
             0 => CardStatus::Bad,

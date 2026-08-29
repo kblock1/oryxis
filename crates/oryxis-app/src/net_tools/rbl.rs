@@ -126,7 +126,7 @@ async fn query_zone(
             // The TXT beside the A record is where the zone explains
             // itself ("listed in CSS", "see https://..."), which is the
             // half a user can act on.
-            let reasons = match resolver.lookup(name, RecordType::TXT).await {
+            let reasons: Vec<String> = match resolver.lookup(name, RecordType::TXT).await {
                 Ok(txt) => txt
                     .answers()
                     .iter()
@@ -135,11 +135,31 @@ async fn query_zone(
                     .collect(),
                 Err(_) => Vec::new(),
             };
+            // An answer is not always a listing. Spamhaus replies inside
+            // 127.255.255.0/24 to say it is REFUSING the query (an open
+            // resolver, a rate limit, a missing key), and reading that as
+            // "this address sends spam" is the worst thing this tool
+            // could get wrong: it is an accusation, and it is about an
+            // address whose owner is usually the person looking.
+            if codes.iter().all(|c| is_zone_error_code(c)) {
+                let why = reasons.first().cloned().unwrap_or_else(|| codes.join(", "));
+                return Verdict::NoAnswer(why);
+            }
             Verdict::Listed { codes, reasons }
         }
         Err(e) if e.is_nx_domain() || e.is_no_records_found() => Verdict::Clean,
         Err(e) => Verdict::NoAnswer(e.to_string()),
     }
+}
+
+/// Whether an answer code means "the zone declined" rather than "the
+/// address is listed". `127.255.255.0/24` is what Spamhaus returns for
+/// every usage error (open resolver, over the free query limit, no key),
+/// and the other zones publish their listings in `127.0.0.0/24`, so the
+/// range is unambiguous.
+pub(crate) fn is_zone_error_code(code: &str) -> bool {
+    code.parse::<std::net::Ipv4Addr>()
+        .is_ok_and(|ip| ip.octets()[..3] == [127, 255, 255])
 }
 
 /// The name a blocklist is asked about: the address reversed, then the
@@ -183,6 +203,20 @@ mod tests {
         assert!(query_name("2001:db8::1".parse().unwrap(), "bl.spamcop.net", false).is_none());
         // ... and still answers for a v4 target.
         assert!(query_name("1.2.3.4".parse().unwrap(), "bl.spamcop.net", false).is_some());
+    }
+
+    #[test]
+    fn a_refusal_is_not_a_listing() {
+        // Spamhaus answers 127.255.255.x when it declines the query. A
+        // listing lives in 127.0.0.x, so the two never collide.
+        assert!(is_zone_error_code("127.255.255.254"));
+        assert!(is_zone_error_code("127.255.255.252"));
+        assert!(!is_zone_error_code("127.0.0.2"));
+        assert!(!is_zone_error_code("127.0.0.10"));
+        // Not an address at all: whatever it is, it is not a refusal
+        // code, so the verdict falls through to the ordinary reading.
+        assert!(!is_zone_error_code("listed"));
+        assert!(!is_zone_error_code(""));
     }
 
     #[test]

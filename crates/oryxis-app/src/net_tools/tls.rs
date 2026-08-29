@@ -118,13 +118,7 @@ pub(crate) fn summarize_at(
         .subject_alternative_name()
         .ok()
         .flatten()
-        .map(|ext| {
-            ext.value
-                .general_names
-                .iter()
-                .map(|n| n.to_string())
-                .collect::<Vec<_>>()
-        })
+        .map(|ext| ext.value.general_names.iter().map(render_general_name).collect::<Vec<_>>())
         .unwrap_or_default();
     // `time_to_expiration` is None once the certificate is past its
     // notAfter, which is precisely the case the card most needs a number
@@ -139,6 +133,34 @@ pub(crate) fn summarize_at(
         days_left,
         chain_len,
     })
+}
+
+/// One subject-alternative name as the certificate means it. The
+/// parser's own `Display` wraps each entry in its variant
+/// (`DNSName(example.com)`), which is the kind of detail that makes a
+/// card read as debug output rather than as the names the certificate
+/// covers.
+fn render_general_name(name: &x509_parser::extensions::GeneralName<'_>) -> String {
+    use x509_parser::extensions::GeneralName;
+    match name {
+        GeneralName::DNSName(s) | GeneralName::RFC822Name(s) | GeneralName::URI(s) => {
+            (*s).to_string()
+        }
+        // An IP SAN is raw bytes: 4 for v4, 16 for v6, and anything else
+        // is a certificate nobody should be trusting anyway, so it falls
+        // through to the parser's own rendering rather than being
+        // guessed at.
+        GeneralName::IPAddress(bytes) => match bytes.len() {
+            4 => std::net::Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]).to_string(),
+            16 => {
+                let mut octets = [0u8; 16];
+                octets.copy_from_slice(bytes);
+                std::net::Ipv6Addr::from(octets).to_string()
+            }
+            _ => format!("{name}"),
+        },
+        other => format!("{other}"),
+    }
 }
 
 /// Accepts everything and remembers what it was given. See the module
@@ -230,8 +252,9 @@ mod tests {
     #[test]
     fn subject_alternative_names_are_listed() {
         let s = summarize_at(SELF_SIGNED, 1, DURING).expect("parse");
-        assert!(s.sans.iter().any(|n| n.contains("oryxis.test")), "sans: {:?}", s.sans);
-        assert!(s.sans.iter().any(|n| n.contains("www.oryxis.test")), "sans: {:?}", s.sans);
+        // Bare names, not the parser's `DNSName(...)` wrapper: the card
+        // shows what the certificate covers, not how it was decoded.
+        assert_eq!(s.sans, vec!["oryxis.test".to_string(), "www.oryxis.test".to_string()]);
     }
 
     #[test]
