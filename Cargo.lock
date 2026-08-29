@@ -5366,6 +5366,7 @@ dependencies = [
  "sha1 0.11.0",
  "sha2 0.11.0",
  "signature",
+ "socket2",
  "ssh-encoding",
  "ssh-key",
  "sys-locale",
