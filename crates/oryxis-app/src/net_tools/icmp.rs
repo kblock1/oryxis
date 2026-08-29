@@ -278,12 +278,15 @@ mod linux {
         let dest = SockAddr::from(SocketAddr::new(ip, 0));
         let sent = std::time::Instant::now();
         if let Err(e) = socket.send_to(&packet, &dest) {
-            // A route that does not exist answers immediately and
-            // locally; reporting it as a timeout would blame the
-            // network for a local configuration.
+            // The packet never left, so there is nothing to time out on.
+            // A missing route (ENETUNREACH) is a LOCAL fact, and
+            // reporting it as silence would blame the network for this
+            // machine's configuration; handing it back as unavailable
+            // sends the caller to the system binary, which prints the
+            // real reason.
             return match e.raw_os_error() {
                 Some(libc::EACCES) | Some(libc::EPERM) => Err(Unavailable::Denied),
-                _ => Ok(Outcome::Timeout),
+                _ => Err(Unavailable::Failed(e.to_string())),
             };
         }
 

@@ -166,18 +166,12 @@ async fn native_ping(host: &str) -> Option<Vec<NetToolCard>> {
         Err(_) => return None,
     };
 
-    let received = outcomes.iter().filter(|o| o.is_final()).count() as u32;
-    let sent = outcomes.len() as u32;
-    let loss = if sent == 0 {
-        100.0
-    } else {
-        (sent - received) as f32 / sent as f32 * 100.0
-    };
+    let tally = tally_echoes(&outcomes);
     let mut lines = vec![
         t("net_ping_summary")
-            .replacen("{recv}", &received.to_string(), 1)
-            .replacen("{sent}", &sent.to_string(), 1)
-            .replacen("{loss}", &format!("{loss:.0}"), 1),
+            .replacen("{recv}", &tally.received.to_string(), 1)
+            .replacen("{sent}", &tally.sent.to_string(), 1)
+            .replacen("{loss}", &format!("{:.0}", tally.loss_pct()), 1),
     ];
     let times: Vec<f32> = outcomes.iter().filter_map(Outcome::rtt_ms).collect();
     if !times.is_empty() {
@@ -194,12 +188,55 @@ async fn native_ping(host: &str) -> Option<Vec<NetToolCard>> {
             lines.push(format!("{}: {from}", t("net_ping_unreachable")));
         }
     }
-    let status = match received {
-        0 => CardStatus::Bad,
-        r if r < sent => CardStatus::Warn,
-        _ => CardStatus::Ok,
-    };
-    Some(vec![NetToolCard::new(host.to_string(), lines).status(status)])
+    Some(vec![NetToolCard::new(host.to_string(), lines).status(tally.status())])
+}
+
+/// What a run of echo probes amounts to.
+///
+/// Pure, and separate from the card, because the counting is the part
+/// that can be WRONG in a way nobody notices: only an echo reply is the
+/// target answering. An `Unreachable` ends the walk (that is
+/// `Outcome::is_final`) but it is a router saying the target cannot be
+/// had, so counting it as a reply would report "4 of 4 answered, 0%
+/// lost" in green for a host that is not there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EchoTally {
+    sent: u32,
+    received: u32,
+    /// Someone reported the target unreachable, which is a different
+    /// failure from silence and gets the worst status even if another
+    /// probe did come back.
+    unreachable: bool,
+}
+
+impl EchoTally {
+    fn loss_pct(&self) -> f32 {
+        if self.sent == 0 {
+            return 100.0;
+        }
+        (self.sent - self.received) as f32 / self.sent as f32 * 100.0
+    }
+
+    fn status(&self) -> CardStatus {
+        if self.received == 0 || self.unreachable {
+            CardStatus::Bad
+        } else if self.received < self.sent {
+            CardStatus::Warn
+        } else {
+            CardStatus::Ok
+        }
+    }
+}
+
+fn tally_echoes(outcomes: &[Outcome]) -> EchoTally {
+    EchoTally {
+        sent: outcomes.len() as u32,
+        received: outcomes
+            .iter()
+            .filter(|o| matches!(o, Outcome::Reply { .. }))
+            .count() as u32,
+        unreachable: outcomes.iter().any(|o| matches!(o, Outcome::Unreachable { .. })),
+    }
 }
 
 /// Traceroute over the native socket, same contract as [`native_ping`].
@@ -218,7 +255,10 @@ async fn native_traceroute(host: &str) -> Option<Vec<NetToolCard>> {
         return None;
     }
     let silent = outcomes.iter().filter(|o| matches!(o, Outcome::Timeout)).count();
-    let reached = outcomes.last().is_some_and(Outcome::is_final);
+    // Arriving means the TARGET answered. A walk that ends on a router
+    // reporting the target unreachable stopped for the opposite reason,
+    // and reporting it green would say the path works.
+    let reached = outcomes.last().is_some_and(|o| matches!(o, Outcome::Reply { .. }));
     let lines: Vec<String> = outcomes
         .iter()
         .enumerate()
@@ -689,6 +729,60 @@ fn parse_time_token(token: &str, next: Option<&str>) -> Option<(f32, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::net::{IpAddr, Ipv4Addr};
+
+    fn reply() -> Outcome {
+        Outcome::Reply { from: IpAddr::V4(Ipv4Addr::LOCALHOST), rtt_ms: 1.0 }
+    }
+
+    fn unreachable() -> Outcome {
+        Outcome::Unreachable { from: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), rtt_ms: 1.0 }
+    }
+
+    #[test]
+    fn every_reply_is_a_clean_run() {
+        let tally = tally_echoes(&[reply(), reply()]);
+        assert_eq!((tally.sent, tally.received), (2, 2));
+        assert_eq!(tally.loss_pct(), 0.0);
+        assert_eq!(tally.status(), CardStatus::Ok);
+    }
+
+    #[test]
+    fn silence_is_partial_loss() {
+        let tally = tally_echoes(&[reply(), Outcome::Timeout]);
+        assert_eq!(tally.received, 1);
+        assert_eq!(tally.loss_pct(), 50.0);
+        assert_eq!(tally.status(), CardStatus::Warn);
+    }
+
+    #[test]
+    fn an_unreachable_report_is_not_an_answer() {
+        // A router saying the target cannot be reached ENDS the probe,
+        // but it is not the target replying: counting it as one reported
+        // "answered, 0% lost" in green for a host that is not there.
+        let tally = tally_echoes(&[unreachable(), unreachable()]);
+        assert_eq!(tally.received, 0);
+        assert_eq!(tally.loss_pct(), 100.0);
+        assert_eq!(tally.status(), CardStatus::Bad);
+    }
+
+    #[test]
+    fn one_unreachable_beside_a_reply_still_fails() {
+        // Half a route answering and the other half being refused is a
+        // broken path, not a slightly lossy one.
+        let tally = tally_echoes(&[reply(), unreachable()]);
+        assert_eq!(tally.received, 1);
+        assert_eq!(tally.status(), CardStatus::Bad);
+    }
+
+    #[test]
+    fn nothing_sent_is_total_loss_rather_than_a_divide_by_zero() {
+        let tally = tally_echoes(&[]);
+        assert_eq!(tally.loss_pct(), 100.0);
+        assert_eq!(tally.status(), CardStatus::Bad);
+    }
+
 
     const LINUX_PING: &str = "PING example.com (93.184.216.34) 56(84) bytes of data.\n\
 64 bytes from 93.184.216.34: icmp_seq=1 ttl=54 time=11.2 ms\n\
