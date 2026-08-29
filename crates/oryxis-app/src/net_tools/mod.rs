@@ -18,6 +18,7 @@
 
 pub(crate) mod dns;
 pub(crate) mod http;
+pub(crate) mod icmp;
 pub(crate) mod ping;
 pub(crate) mod port;
 pub(crate) mod rbl;

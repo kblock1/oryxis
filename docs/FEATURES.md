@@ -309,9 +309,14 @@ turns it on). Switching it back off closes the tab with it.
   up in reverse (PTR) instead, and a domain publishing two SPF records
   is called out as the error receivers treat it as.
 - **Ping and traceroute.** Four echo requests and a hop-by-hop path,
-  driven through the system binaries, with the summary card on top and
-  the tool's own output kept underneath. A missing binary says which
-  package carries it rather than failing silently.
+  spoken natively where the OS allows it without privileges (a datagram
+  ICMP socket on Linux, `IcmpSendEcho2` on Windows), so neither needs
+  `ping` or `traceroute` to be installed: a stock WSL image has no
+  traceroute at all. Where there is no unprivileged path (macOS, the
+  BSDs, or a kernel with `ping_group_range` closed) it falls back to the
+  system binary and shows its raw output next to the summary, and a
+  missing binary says which package carries it rather than failing
+  silently.
 - **Port test.** Up to 64 ports per run (`22, 80, 443` or `8000-8010`),
   connected in parallel, reporting open, refused or filtered as three
   different answers: a service that is down and a firewall that swallows
