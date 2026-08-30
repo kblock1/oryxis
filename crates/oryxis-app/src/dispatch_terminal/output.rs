@@ -575,9 +575,19 @@ impl Oryxis {
                 // through, whichever of the creation paths made it. The
                 // setter is a bool comparison when the answer has not
                 // changed, so the first batch pays for it and no other.
-                let ambiguous_width_wide = rules_conn_id
-                    .and_then(|id| self.connections.iter().find(|c| c.id == id))
-                    .is_some_and(|c| c.ambiguous_width_effective());
+                // A mosh pane answers from the value PINNED at handover
+                // instead: the screen inside the protocol was built with
+                // that one and cannot be reconfigured, and a pane that
+                // re-read the setting would end up disagreeing with the
+                // model whose diff it is drawing.
+                let ambiguous_width_wide = self
+                    .pane_by_id(pane_id)
+                    .and_then(|p| p.mosh_ambiguous_width)
+                    .unwrap_or_else(|| {
+                        rules_conn_id
+                            .and_then(|id| self.connections.iter().find(|c| c.id == id))
+                            .is_some_and(|c| c.ambiguous_width_effective())
+                    });
                 // What each action-bearing rule should DO, resolved
                 // before the borrow because the actions themselves need
                 // the whole app (a toast, a snippet, a confirmation).

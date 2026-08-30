@@ -87,6 +87,19 @@ impl Oryxis {
         let ambiguous_width_wide = self
             .pane_connection(pane_id)
             .is_some_and(|c| c.ambiguous_width_effective());
+        // PINNED on the pane, because the output funnel would otherwise
+        // re-read the host's setting on every batch and a later edit
+        // would flip the PANE while the screen inside the protocol keeps
+        // the answer it was built with (there is no path to re-configure
+        // it). On a mosh host the setting applies on the next connect,
+        // the way encoding and TERM do. Cleared on disconnect.
+        if let Some(pane) = self
+            .tabs
+            .iter_mut()
+            .find_map(|t| t.pane_grid.panes.values_mut().find(|p| p.id == pane_id))
+        {
+            pane.mosh_ambiguous_width = Some(ambiguous_width_wide);
+        }
 
         let command = ServerCommand {
             server_path: options.server_path.clone(),

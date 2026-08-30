@@ -86,6 +86,11 @@ impl AlacrittyScreen {
     /// draws the diff computed from it, and two emulators disagreeing
     /// about how wide `│` is would make the pane show something this
     /// model never described.
+    ///
+    /// It is also FIXED for the life of the session, since there is no
+    /// path to reconfigure the screen once the protocol owns it. The
+    /// caller pins the pane's own answer at handover for that reason;
+    /// editing the host takes effect on the next connect.
     pub fn new(rows: u16, cols: u16, ambiguous_width_wide: bool) -> Self {
         let size = Size { cols, rows };
         let config = TermConfig {
