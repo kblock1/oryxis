@@ -62,11 +62,11 @@ impl Oryxis {
                     self.show_toast(crate::i18n::t("net_copied").to_string()),
                 ])
             }
-            NetToolsMessage::CardHovered(idx) => {
+            NetToolsMessage::ResultHovered(idx) => {
                 self.hover.net_tools_card = Some(idx);
                 Task::none()
             }
-            NetToolsMessage::CardUnhovered(idx) => {
+            NetToolsMessage::ResultUnhovered(idx) => {
                 // Crossing from one card to the next publishes the
                 // arriving card's enter before the departing card's
                 // exit, so the clear has to name the card it is leaving

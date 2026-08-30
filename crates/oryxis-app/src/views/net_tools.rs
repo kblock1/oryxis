@@ -265,8 +265,8 @@ impl Oryxis {
         iced::widget::MouseArea::new(
             iced::widget::Stack::new().push(body).push(overlay).width(Length::Fill),
         )
-        .on_enter(Message::NetTools(NetToolsMessage::CardHovered(idx)))
-        .on_exit(Message::NetTools(NetToolsMessage::CardUnhovered(idx)))
+        .on_enter(Message::NetTools(NetToolsMessage::ResultHovered(idx)))
+        .on_exit(Message::NetTools(NetToolsMessage::ResultUnhovered(idx)))
         .into()
     }
 }

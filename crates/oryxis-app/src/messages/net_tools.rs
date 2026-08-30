@@ -28,7 +28,10 @@ pub enum NetToolsMessage {
     /// Copy one result card to the clipboard (index into `cards`).
     CopyCard(usize),
     /// Pointer entered / left a result card, for the hover-revealed copy
-    /// action.
-    CardHovered(usize),
-    CardUnhovered(usize),
+    /// action. Named `Result*` rather than `Card*` because
+    /// `TabsMessage` already owns a `CardHovered(usize)`: two sub-enums
+    /// declaring one name with one payload compile at every send site,
+    /// so the pair would be a wrong-wrapper landmine.
+    ResultHovered(usize),
+    ResultUnhovered(usize),
 }
