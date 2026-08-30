@@ -79,6 +79,14 @@ impl Oryxis {
         // because a host reachable both ways works fine and refusing it
         // would take away a working setup.
         let host = self.pane_dialled_host(pane_id);
+        // The same answer the pane's own emulator is given on every
+        // output batch. The mosh screen decides where the server's
+        // output lands and the pane draws the diff taken from it, so a
+        // disagreement about how wide `│` is would put text in the pane
+        // that the model never described.
+        let ambiguous_width_wide = self
+            .pane_connection(pane_id)
+            .is_some_and(|c| c.ambiguous_width_effective());
 
         let command = ServerCommand {
             server_path: options.server_path.clone(),
@@ -137,6 +145,7 @@ impl Oryxis {
                 &handover.key,
                 cols,
                 rows,
+                ambiguous_width_wide,
             );
             let (session, mut rx) = match opened {
                 Ok(pair) => pair,

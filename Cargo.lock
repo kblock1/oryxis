@@ -106,7 +106,7 @@ dependencies = [
 [[package]]
 name = "alacritty_terminal"
 version = "0.26.1-dev"
-source = "git+https://github.com/wilsonglasser/alacritty#f4ae5489c57b4126cb5223fd04cc50b01cafa808"
+source = "git+https://github.com/wilsonglasser/alacritty#cfdd2d6c6ec5a1889a43bc9bab0b16d1178b4915"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.13.1",
@@ -5548,6 +5548,7 @@ dependencies = [
  "chrono",
  "data-encoding",
  "dirs",
+ "encoding_rs",
  "hmac 0.13.0",
  "libc",
  "regex",

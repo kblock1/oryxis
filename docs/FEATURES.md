@@ -222,6 +222,16 @@ coming next, see the [Roadmap](../README.md#roadmap).
   a scheme moves between machines without the vault.
 - **Bundled Nerd Fonts.** SauceCodePro plus a Symbols Nerd Font fallback so
   Powerline and icon glyphs always render.
+- **East Asian ambiguous width.** Box drawing, arrows, circled digits and
+  Greek letters are one cell wide in Western environments and two in
+  legacy CJK ones, which is why vim borders step and htop bars break on a
+  zh / ja / ko remote. `Host editor → Terminal → Ambiguous width` picks
+  per host: Auto (a legacy CJK encoding on the host means wide),
+  Narrow or Wide. The same pick sits in the terminal sidebar's Host
+  config tab, where it applies to new output without reconnecting. Width
+  is a two-party contract: this only lets Oryxis match what the remote's
+  `wcwidth` already does, so pair it with a CJK locale on the server or
+  `set ambiwidth=double` in vim.
 - **Paste done right.** X11-style middle-click paste, configurable
   right-click (paste / context menu / xterm-style extend selection), CRLF
   normalization, and a paste guard (see Security below).

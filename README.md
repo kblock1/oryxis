@@ -124,8 +124,9 @@ matching installer. Windows binaries are Authenticode-signed (see
   groups, per-host themes, an optional translucent background or
   background image, bundled
   Nerd Fonts plus a downloadable font pack (JetBrains Mono, Fira Code,
-  MesloLGS and more), smart tabs that flag long-running commands, and
-  per-host command history.
+  MesloLGS and more), smart tabs that flag long-running commands,
+  per-host command history, and a per-host East Asian ambiguous-width
+  setting so CJK TUIs line up.
 - **Files everywhere.** Dual-pane SFTP with drag-and-drop, edit-in-place
   and server-to-server copy; every SSH tab also carries a Files sidebar
   that follows your shell's working directory. Prefer typing? An
@@ -274,7 +275,7 @@ tracks it interactively.
   `oryxis-relay` on a host from your vault over SSH, with the script
   shown before it runs).
 - **China & CJK:** Alibaba Cloud (ECS) and Tencent Cloud (CVM)
-  providers, and an East Asian ambiguous-width option.
+  providers.
 - **AI ops toolkit:** the assistant graduates from generating shell
   strings to typed, structured operations synthesized for the host's
   actual OS, with dry-run previews on every state change, an audit
