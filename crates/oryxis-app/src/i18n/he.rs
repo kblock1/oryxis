@@ -2257,6 +2257,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "אין תשובה",
         "net_rbl_no_ipv6" => "אין נתוני IPv6",
         "net_err_no_target" => "הזינו קודם יעד.",
+        "net_err_flag_target" => "יעד לא יכול להתחיל במקף.",
         "net_err_no_ports" => "הזינו לפחות פורט אחד.",
         "net_err_too_many_ports" => "יותר מדי פורטים להרצה אחת",
         "net_err_bad_port" => "לא פורט",

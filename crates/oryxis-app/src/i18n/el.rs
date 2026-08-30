@@ -2256,6 +2256,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Καμία απάντηση",
         "net_rbl_no_ipv6" => "χωρίς δεδομένα IPv6",
         "net_err_no_target" => "Δώστε πρώτα έναν στόχο.",
+        "net_err_flag_target" => "Ο στόχος δεν μπορεί να αρχίζει με παύλα.",
         "net_err_no_ports" => "Δώστε τουλάχιστον μία θύρα.",
         "net_err_too_many_ports" => "Πάρα πολλές θύρες για μία εκτέλεση",
         "net_err_bad_port" => "Δεν είναι θύρα",

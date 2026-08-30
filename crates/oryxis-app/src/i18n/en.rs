@@ -2260,6 +2260,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "net_rbl_no_answer" => "No answer",
         "net_rbl_no_ipv6" => "no IPv6 data",
         "net_err_no_target" => "Enter a target first.",
+        "net_err_flag_target" => "A target cannot start with a dash.",
         "net_err_no_ports" => "Enter at least one port.",
         "net_err_too_many_ports" => "Too many ports for one run",
         "net_err_bad_port" => "Not a port",

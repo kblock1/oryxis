@@ -2251,6 +2251,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Yanıt yok",
         "net_rbl_no_ipv6" => "IPv6 verisi yok",
         "net_err_no_target" => "Önce bir hedef girin.",
+        "net_err_flag_target" => "Hedef tire ile başlayamaz.",
         "net_err_no_ports" => "En az bir port girin.",
         "net_err_too_many_ports" => "Tek çalıştırma için çok fazla port",
         "net_err_bad_port" => "Port değil",

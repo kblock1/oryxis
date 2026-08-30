@@ -2252,6 +2252,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Không phản hồi",
         "net_rbl_no_ipv6" => "không có dữ liệu IPv6",
         "net_err_no_target" => "Hãy nhập đích trước.",
+        "net_err_flag_target" => "Mục tiêu không thể bắt đầu bằng dấu gạch ngang.",
         "net_err_no_ports" => "Hãy nhập ít nhất một cổng.",
         "net_err_too_many_ports" => "Quá nhiều cổng cho một lần chạy",
         "net_err_bad_port" => "Không phải cổng",

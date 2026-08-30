@@ -2252,6 +2252,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Tanpa jawaban",
         "net_rbl_no_ipv6" => "tanpa data IPv6",
         "net_err_no_target" => "Masukkan target dulu.",
+        "net_err_flag_target" => "Target tidak boleh diawali tanda hubung.",
         "net_err_no_ports" => "Masukkan setidaknya satu port.",
         "net_err_too_many_ports" => "Terlalu banyak port untuk satu kali jalan",
         "net_err_bad_port" => "Bukan port",

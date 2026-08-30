@@ -2258,6 +2258,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "ไม่ตอบสนอง",
         "net_rbl_no_ipv6" => "ไม่มีข้อมูล IPv6",
         "net_err_no_target" => "ใส่เป้าหมายก่อน",
+        "net_err_flag_target" => "เป้าหมายต้องไม่ขึ้นต้นด้วยเครื่องหมายขีด",
         "net_err_no_ports" => "ใส่พอร์ตอย่างน้อยหนึ่งพอร์ต",
         "net_err_too_many_ports" => "พอร์ตมากเกินไปสำหรับการทำงานครั้งเดียว",
         "net_err_bad_port" => "ไม่ใช่พอร์ต",

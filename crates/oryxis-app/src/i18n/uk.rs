@@ -2251,6 +2251,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Немає відповіді",
         "net_rbl_no_ipv6" => "немає даних IPv6",
         "net_err_no_target" => "Спершу введіть ціль.",
+        "net_err_flag_target" => "Ціль не може починатися з дефіса.",
         "net_err_no_ports" => "Введіть щонайменше один порт.",
         "net_err_too_many_ports" => "Забагато портів для одного запуску",
         "net_err_bad_port" => "Це не порт",

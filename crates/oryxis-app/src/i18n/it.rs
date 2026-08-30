@@ -2219,6 +2219,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Nessuna risposta",
         "net_rbl_no_ipv6" => "nessun dato IPv6",
         "net_err_no_target" => "Inserisci prima una destinazione.",
+        "net_err_flag_target" => "Un target non può iniziare con un trattino.",
         "net_err_no_ports" => "Inserisci almeno una porta.",
         "net_err_too_many_ports" => "Troppe porte per una esecuzione",
         "net_err_bad_port" => "Non è una porta",

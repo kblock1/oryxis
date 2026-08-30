@@ -2257,6 +2257,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "कोई उत्तर नहीं",
         "net_rbl_no_ipv6" => "IPv6 डेटा नहीं",
         "net_err_no_target" => "पहले एक लक्ष्य दर्ज करें।",
+        "net_err_flag_target" => "लक्ष्य हाइफ़न से शुरू नहीं हो सकता।",
         "net_err_no_ports" => "कम से कम एक पोर्ट दर्ज करें।",
         "net_err_too_many_ports" => "एक बार में बहुत अधिक पोर्ट",
         "net_err_bad_port" => "यह पोर्ट नहीं है",

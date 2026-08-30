@@ -2220,6 +2220,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Sem resposta",
         "net_rbl_no_ipv6" => "sem dados IPv6",
         "net_err_no_target" => "Informe um alvo primeiro.",
+        "net_err_flag_target" => "Um alvo não pode começar com hífen.",
         "net_err_no_ports" => "Informe pelo menos uma porta.",
         "net_err_too_many_ports" => "Portas demais para uma execução",
         "net_err_bad_port" => "Não é uma porta",

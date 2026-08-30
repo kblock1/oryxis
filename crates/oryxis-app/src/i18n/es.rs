@@ -2219,6 +2219,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Sin respuesta",
         "net_rbl_no_ipv6" => "sin datos IPv6",
         "net_err_no_target" => "Escribe primero un destino.",
+        "net_err_flag_target" => "Un objetivo no puede empezar por guion.",
         "net_err_no_ports" => "Escribe al menos un puerto.",
         "net_err_too_many_ports" => "Demasiados puertos para una ejecución",
         "net_err_bad_port" => "No es un puerto",

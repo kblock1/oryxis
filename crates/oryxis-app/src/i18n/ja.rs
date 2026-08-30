@@ -2220,6 +2220,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "応答なし",
         "net_rbl_no_ipv6" => "IPv6 データなし",
         "net_err_no_target" => "先に対象を入力してください。",
+        "net_err_flag_target" => "ターゲットをハイフンで始めることはできません。",
         "net_err_no_ports" => "ポートを 1 つ以上入力してください。",
         "net_err_too_many_ports" => "1 回の実行にはポートが多すぎます",
         "net_err_bad_port" => "ポートではありません",

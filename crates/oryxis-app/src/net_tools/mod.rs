@@ -217,6 +217,19 @@ pub(crate) fn host_of(target: &str) -> &str {
     }
 }
 
+/// A target the ping and traceroute fallbacks would hand to the system
+/// binary as one of ITS OWN flags rather than as a host.
+///
+/// Those two are the only tools here that spawn a process, and the host
+/// is the last word of the argv. `-f` is a flood ping and `-I eth0`
+/// picks an interface, so a leading dash has to be refused before the
+/// spawn rather than explained after it. No hostname or address starts
+/// with one, so nothing legitimate is lost; `--` is not the answer
+/// because Windows `ping` does not parse it.
+pub(crate) fn is_flag_like(host: &str) -> bool {
+    host.starts_with('-')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

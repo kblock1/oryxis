@@ -2219,6 +2219,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "无响应",
         "net_rbl_no_ipv6" => "无 IPv6 数据",
         "net_err_no_target" => "请先输入目标。",
+        "net_err_flag_target" => "目标不能以连字符开头。",
         "net_err_no_ports" => "请至少输入一个端口。",
         "net_err_too_many_ports" => "单次运行的端口过多",
         "net_err_bad_port" => "不是端口",

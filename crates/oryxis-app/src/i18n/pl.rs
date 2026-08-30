@@ -2251,6 +2251,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Brak odpowiedzi",
         "net_rbl_no_ipv6" => "brak danych IPv6",
         "net_err_no_target" => "Najpierw podaj cel.",
+        "net_err_flag_target" => "Cel nie może zaczynać się od myślnika.",
         "net_err_no_ports" => "Podaj przynajmniej jeden port.",
         "net_err_too_many_ports" => "Za dużo portów na jedno uruchomienie",
         "net_err_bad_port" => "To nie jest port",

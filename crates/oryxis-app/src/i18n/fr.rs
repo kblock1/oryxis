@@ -2218,6 +2218,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Sans réponse",
         "net_rbl_no_ipv6" => "pas de données IPv6",
         "net_err_no_target" => "Saisissez d'abord une cible.",
+        "net_err_flag_target" => "Une cible ne peut pas commencer par un tiret.",
         "net_err_no_ports" => "Saisissez au moins un port.",
         "net_err_too_many_ports" => "Trop de ports pour une exécution",
         "net_err_bad_port" => "N'est pas un port",

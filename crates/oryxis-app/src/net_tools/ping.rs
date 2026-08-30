@@ -40,6 +40,9 @@ const MAX_HOPS: u8 = 20;
 
 pub(crate) async fn probe_ping(target: &str) -> Result<Vec<NetToolCard>, String> {
     let host = super::host_of(target);
+    if super::is_flag_like(host) {
+        return Err(t("net_err_flag_target").to_string());
+    }
     if let Some(cards) = native_ping(host).await {
         return Ok(cards);
     }
@@ -76,6 +79,9 @@ pub(crate) async fn probe_ping(target: &str) -> Result<Vec<NetToolCard>, String>
 
 pub(crate) async fn probe_traceroute(target: &str) -> Result<Vec<NetToolCard>, String> {
     let host = super::host_of(target);
+    if super::is_flag_like(host) {
+        return Err(t("net_err_flag_target").to_string());
+    }
     if let Some(cards) = native_traceroute(host).await {
         return Ok(cards);
     }

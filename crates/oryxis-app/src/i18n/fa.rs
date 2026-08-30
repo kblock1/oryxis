@@ -2239,6 +2239,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "بدون پاسخ",
         "net_rbl_no_ipv6" => "بدون دادهٔ IPv6",
         "net_err_no_target" => "نخست هدفی وارد کنید.",
+        "net_err_flag_target" => "هدف نمی‌تواند با خط تیره شروع شود.",
         "net_err_no_ports" => "دست‌کم یک پورت وارد کنید.",
         "net_err_too_many_ports" => "پورت‌ها برای یک اجرا بیش از حدند",
         "net_err_bad_port" => "پورت نیست",

@@ -2219,6 +2219,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Keine Antwort",
         "net_rbl_no_ipv6" => "keine IPv6-Daten",
         "net_err_no_target" => "Zuerst ein Ziel eingeben.",
+        "net_err_flag_target" => "Ein Ziel darf nicht mit einem Bindestrich beginnen.",
         "net_err_no_ports" => "Mindestens einen Port eingeben.",
         "net_err_too_many_ports" => "Zu viele Ports für einen Durchlauf",
         "net_err_bad_port" => "Kein Port",

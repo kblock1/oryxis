@@ -2256,6 +2256,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "Bez odpovědi",
         "net_rbl_no_ipv6" => "žádná data IPv6",
         "net_err_no_target" => "Nejprve zadejte cíl.",
+        "net_err_flag_target" => "Cíl nemůže začínat pomlčkou.",
         "net_err_no_ports" => "Zadejte alespoň jeden port.",
         "net_err_too_many_ports" => "Příliš mnoho portů na jeden běh",
         "net_err_bad_port" => "Není port",

@@ -2252,6 +2252,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "net_rbl_no_answer" => "응답 없음",
         "net_rbl_no_ipv6" => "IPv6 데이터 없음",
         "net_err_no_target" => "먼저 대상을 입력하세요.",
+        "net_err_flag_target" => "대상은 하이픈으로 시작할 수 없습니다.",
         "net_err_no_ports" => "포트를 하나 이상 입력하세요.",
         "net_err_too_many_ports" => "한 번에 검사하기에 포트가 너무 많습니다",
         "net_err_bad_port" => "포트가 아닙니다",
