@@ -7574,8 +7574,8 @@ dependencies = [
 
 [[package]]
 name = "serialport"
-version = "4.9.1"
-source = "git+https://github.com/wilsonglasser/serialport-rs#df47e8085202aed96f7ce077bef3aa9a738ad9e4"
+version = "4.10.1"
+source = "git+https://github.com/wilsonglasser/serialport-rs#86dfa57f0fc490e1f65f48589bf50aa933b55ca1"
 dependencies = [
  "bitflags 2.13.1",
  "cfg-if",
