@@ -586,7 +586,8 @@ async fn get(
         // whole transfer, and say which name was refused, because a file
         // silently missing from a `mget` is worse than a loud one.
         if !crate::sftp::is_safe_entry_name(&base) {
-            line(out, &format!("{base}: skipped, unsafe file name"));
+            let shown = render::display_name(&base);
+            line(out, &format!("{shown}: skipped, unsafe file name"));
             continue;
         }
         let dest = match (&local, multiple) {
@@ -606,7 +607,9 @@ async fn get(
         // for the whole transfer and jump to done at the end.
         let counter = Arc::new(AtomicU64::new(0));
         transfer(
-            &base,
+            // The progress line goes to the terminal, so it carries the
+            // sanitized name; `dest` above was built from the real one.
+            &render::display_name(&base),
             size,
             state,
             out,
@@ -661,7 +664,7 @@ async fn put(
             ..Default::default()
         };
         transfer(
-            &base,
+            &render::display_name(&base),
             size,
             state,
             out,
