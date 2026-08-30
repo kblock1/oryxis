@@ -188,6 +188,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "並排分割",
         "split_stacked" => "上下分割",
         "maximize_pane" => "最大化窗格",
+        "pane_rearrange_side_by_side" => "左右排列",
+        "pane_rearrange_stacked" => "上下排列",
         "pane_border_inactive" => "為非作用中窗格描邊",
         "pane_gap" => "窗格間距",
         "pane_gap_none" => "無",

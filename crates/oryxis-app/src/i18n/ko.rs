@@ -189,6 +189,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "좌우로 분할",
         "split_stacked" => "위아래로 분할",
         "maximize_pane" => "창 최대화",
+        "pane_rearrange_side_by_side" => "좌우 배치",
+        "pane_rearrange_stacked" => "상하 배치",
         "pane_border_inactive" => "비활성 창 테두리",
         "pane_gap" => "창 사이 간격",
         "pane_gap_none" => "없음",

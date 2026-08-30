@@ -188,6 +188,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Разделить рядом",
         "split_stacked" => "Разделить стопкой",
         "maximize_pane" => "Развернуть панель",
+        "pane_rearrange_side_by_side" => "Рядом",
+        "pane_rearrange_stacked" => "Один над другим",
         "pane_border_inactive" => "Контур неактивных панелей",
         "pane_gap" => "Отступ между панелями",
         "pane_gap_none" => "Нет",

@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "अगल-बगल स्प्लिट करें",
         "split_stacked" => "ऊपर-नीचे स्प्लिट करें",
         "maximize_pane" => "पैनल बड़ा करें",
+        "pane_rearrange_side_by_side" => "अगल-बगल",
+        "pane_rearrange_stacked" => "ऊपर-नीचे",
         "pane_border_inactive" => "निष्क्रिय पैनल की रूपरेखा",
         "pane_gap" => "पैनल के बीच अंतर",
         "pane_gap_none" => "कोई नहीं",

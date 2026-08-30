@@ -189,6 +189,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "تقسيم جنبًا إلى جنب",
         "split_stacked" => "تقسيم مكدس",
         "maximize_pane" => "تكبير الجزء",
+        "pane_rearrange_side_by_side" => "جنبًا إلى جنب",
+        "pane_rearrange_stacked" => "فوق بعضها",
         "pane_border_inactive" => "إطار للأجزاء غير النشطة",
         "pane_gap" => "المسافة بين الأجزاء",
         "pane_gap_none" => "بلا",

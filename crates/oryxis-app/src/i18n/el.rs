@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Διαίρεση δίπλα-δίπλα",
         "split_stacked" => "Διαίρεση σε στοίβα",
         "maximize_pane" => "Μεγιστοποίηση τμήματος",
+        "pane_rearrange_side_by_side" => "Δίπλα δίπλα",
+        "pane_rearrange_stacked" => "Σε στοίβα",
         "pane_border_inactive" => "Περίγραμμα ανενεργών τμημάτων",
         "pane_gap" => "Κενό μεταξύ τμημάτων",
         "pane_gap_none" => "Κανένα",

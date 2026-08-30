@@ -189,6 +189,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Bagi berdampingan",
         "split_stacked" => "Bagi bertumpuk",
         "maximize_pane" => "Maksimalkan panel",
+        "pane_rearrange_side_by_side" => "Berdampingan",
+        "pane_rearrange_stacked" => "Bertumpuk",
         "pane_border_inactive" => "Garis tepi panel tidak aktif",
         "pane_gap" => "Jarak antar panel",
         "pane_gap_none" => "Tidak ada",

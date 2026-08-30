@@ -189,6 +189,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "تقسیم کنار هم",
         "split_stacked" => "تقسیم روی هم",
         "maximize_pane" => "بزرگ‌نمایی پنل",
+        "pane_rearrange_side_by_side" => "کنار هم",
+        "pane_rearrange_stacked" => "روی هم",
         "pane_border_inactive" => "خط دور پنل‌های غیرفعال",
         "pane_gap" => "فاصله بین پنل‌ها",
         "pane_gap_none" => "بدون",

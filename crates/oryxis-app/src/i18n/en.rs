@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "split_side_by_side" => "Split side by side",
         "split_stacked" => "Split stacked",
         "maximize_pane" => "Maximize pane",
+        "pane_rearrange_side_by_side" => "Side by side",
+        "pane_rearrange_stacked" => "Stacked",
         "pane_border_inactive" => "Outline inactive panes",
         "pane_gap" => "Gap between panes",
         "pane_gap_none" => "None",

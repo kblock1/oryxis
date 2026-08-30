@@ -189,6 +189,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Yan yana böl",
         "split_stacked" => "Üst üste böl",
         "maximize_pane" => "Bölmeyi büyüt",
+        "pane_rearrange_side_by_side" => "Yan yana",
+        "pane_rearrange_stacked" => "Üst üste",
         "pane_border_inactive" => "Etkin olmayan bölmelerin çerçevesi",
         "pane_gap" => "Bölmeler arası boşluk",
         "pane_gap_none" => "Yok",

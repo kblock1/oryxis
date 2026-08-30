@@ -736,6 +736,56 @@ impl TerminalTab {
         self.pane_grid.panes.len()
     }
 
+    /// The orientation of the divider drawn next to `handle`, so a
+    /// control can name the arrangement flipping it would produce
+    /// rather than making the user guess. `None` on an unsplit tab.
+    pub fn split_axis_at(&self, handle: pane_grid::Pane) -> Option<pane_grid::Axis> {
+        nearest_split(self.pane_grid.layout(), handle).map(|(_, axis)| axis)
+    }
+
+    /// Flip the orientation of the split that separates `handle` from
+    /// its neighbour: stacked becomes side by side and back. Returns
+    /// whether anything moved.
+    ///
+    /// The grid has no API for this (`split` / `swap` / `resize` /
+    /// `drop` and nothing that touches an axis), so the layout is
+    /// REBUILT: read the tree, take the pane values out, and hand the
+    /// same tree back with one axis flipped. Rebuilding is why the pane
+    /// VALUES are moved rather than recreated, sessions, terminals and
+    /// ids intact, and why `focused` is re-resolved by our own stable
+    /// `Pane.id` afterwards (the grid mints fresh handles).
+    ///
+    /// The split it flips is the DEEPEST one holding the pane, which is
+    /// the divider the user is looking at. Flipping an ancestor would
+    /// rearrange panes they did not point at.
+    pub fn flip_split_at(&mut self, handle: pane_grid::Pane) -> bool {
+        // A zoom hides the very divider this rearranges, and the rebuild
+        // drops the zoom anyway, so there is nothing honest to do here.
+        if self.pane_grid.maximized().is_some() {
+            return false;
+        }
+        let layout = self.pane_grid.layout().clone();
+        let Some((split, _)) = nearest_split(&layout, handle) else {
+            return false;
+        };
+        let focused_id = self.pane_grid.get(self.focused).map(|p| p.id);
+        let mut values = std::mem::take(&mut self.pane_grid.panes);
+        let Some(config) = node_to_config(&layout, &mut values, split) else {
+            // A tree that does not name every pane would drop sessions on
+            // the floor. Put the values back and change nothing.
+            self.pane_grid.panes = values;
+            return false;
+        };
+        self.pane_grid = pane_grid::State::with_configuration(config);
+        if let Some(id) = focused_id
+            && let Some((handle, _)) =
+                self.pane_grid.panes.iter().find(|(_, p)| p.id == id)
+        {
+            self.focused = *handle;
+        }
+        true
+    }
+
     /// The pane a TAB-LEVEL SFTP surface resolves against.
     ///
     /// `shell_pane`, not `active()`, and that difference is the whole
@@ -875,6 +925,68 @@ impl TerminalTab {
     }
 }
 
+/// Whether `target` sits anywhere under `node`.
+fn subtree_holds(node: &pane_grid::Node, target: pane_grid::Pane) -> bool {
+    match node {
+        pane_grid::Node::Pane(pane) => *pane == target,
+        pane_grid::Node::Split { a, b, .. } => {
+            subtree_holds(a, target) || subtree_holds(b, target)
+        }
+    }
+}
+
+/// The DEEPEST split holding `target`, which is the divider drawn next
+/// to that pane. `None` when the pane is not in this tree, or the tree
+/// is a lone pane and has no divider at all.
+fn nearest_split(
+    node: &pane_grid::Node,
+    target: pane_grid::Pane,
+) -> Option<(pane_grid::Split, pane_grid::Axis)> {
+    let pane_grid::Node::Split { id, axis, a, b, .. } = node else {
+        return None;
+    };
+    if let Some(deeper) = nearest_split(a, target).or_else(|| nearest_split(b, target)) {
+        return Some(deeper);
+    }
+    (subtree_holds(a, target) || subtree_holds(b, target)).then_some((*id, *axis))
+}
+
+/// Rebuild a layout as a `Configuration`, moving each pane's value out
+/// of `values` and flipping the axis of the split identified by `flip`.
+///
+/// `None` if the tree names a pane the map does not hold, which is the
+/// one case where returning a partial layout would silently drop a live
+/// session; the caller puts the values back instead.
+fn node_to_config<T>(
+    node: &pane_grid::Node,
+    values: &mut std::collections::BTreeMap<pane_grid::Pane, T>,
+    flip: pane_grid::Split,
+) -> Option<pane_grid::Configuration<T>> {
+    match node {
+        pane_grid::Node::Pane(pane) => {
+            values.remove(pane).map(pane_grid::Configuration::Pane)
+        }
+        pane_grid::Node::Split { id, axis, ratio, a, b } => {
+            let a = node_to_config(a, values, flip)?;
+            let b = node_to_config(b, values, flip)?;
+            let axis = if *id == flip {
+                match axis {
+                    pane_grid::Axis::Horizontal => pane_grid::Axis::Vertical,
+                    pane_grid::Axis::Vertical => pane_grid::Axis::Horizontal,
+                }
+            } else {
+                *axis
+            };
+            Some(pane_grid::Configuration::Split {
+                axis,
+                ratio: *ratio,
+                a: Box::new(a),
+                b: Box::new(b),
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod terminal_tab_tests {
     use super::*;
@@ -961,6 +1073,90 @@ mod terminal_tab_tests {
         assert!(
             tab.shell_pane().is_some_and(|p| p != console),
             "standing on the console still names a shell to go back to"
+        );
+    }
+
+    /// Flipping a divider rearranges the panes and keeps every one of
+    /// them, with its identity.
+    ///
+    /// The grid has no axis API, so this REBUILDS the layout and moves
+    /// the pane values across. What a rebuild can get wrong is exactly
+    /// what a screenshot cannot show: a pane dropped on the floor (with
+    /// a live session in it), or focus left pointing at a handle the new
+    /// grid never minted.
+    #[test]
+    fn flipping_a_split_keeps_every_pane_and_the_focus() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let first = tab.focused;
+        let first_id = tab.pane_grid.get(first).unwrap().id;
+        let second = split(&mut tab, pane_grid::Axis::Horizontal);
+        let second_id = tab.pane_grid.get(second).unwrap().id;
+        assert_eq!(tab.split_axis_at(second), Some(pane_grid::Axis::Horizontal));
+
+        assert!(tab.flip_split_at(tab.focused));
+        assert_eq!(tab.pane_grid.panes.len(), 2, "a pane went missing");
+        let ids: Vec<_> = tab.pane_grid.panes.values().map(|p| p.id).collect();
+        assert!(ids.contains(&first_id) && ids.contains(&second_id));
+        assert_eq!(
+            tab.pane_grid.get(tab.focused).map(|p| p.id),
+            Some(second_id),
+            "focus landed on a handle the rebuild did not mint"
+        );
+        assert_eq!(tab.split_axis_at(tab.focused), Some(pane_grid::Axis::Vertical));
+
+        // And back, so the menu row is a real round trip.
+        assert!(tab.flip_split_at(tab.focused));
+        assert_eq!(tab.split_axis_at(tab.focused), Some(pane_grid::Axis::Horizontal));
+    }
+
+    /// Two things a flip must decline instead of guessing: an unsplit
+    /// tab (no divider exists) and a zoomed one (the divider is not on
+    /// screen, and the rebuild would silently drop the zoom).
+    #[test]
+    fn flipping_declines_without_a_visible_divider() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        assert_eq!(tab.split_axis_at(tab.focused), None);
+        assert!(!tab.flip_split_at(tab.focused), "an unsplit tab has no divider");
+
+        let _second = split(&mut tab, pane_grid::Axis::Vertical);
+        tab.toggle_maximize();
+        assert!(tab.pane_grid.maximized().is_some());
+        assert!(!tab.flip_split_at(tab.focused), "a zoomed tab shows no divider");
+        assert!(tab.pane_grid.maximized().is_some(), "the zoom survived the refusal");
+    }
+
+    /// The DEEPEST split wins, so a flip rearranges the divider the user
+    /// pointed at rather than the one above it, which would move panes
+    /// they never touched.
+    #[test]
+    fn flipping_takes_the_divider_next_to_the_pane() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let left_id = tab.pane_grid.get(tab.focused).unwrap().id;
+        // Outer split side by side, then stack the RIGHT side. The left
+        // pane's nearest divider is the outer one; the focused pane's is
+        // the inner one.
+        let _right = split(&mut tab, pane_grid::Axis::Vertical);
+        let inner = split(&mut tab, pane_grid::Axis::Horizontal);
+        assert_eq!(tab.split_axis_at(inner), Some(pane_grid::Axis::Horizontal));
+
+        assert!(tab.flip_split_at(inner));
+        assert_eq!(tab.pane_grid.panes.len(), 3);
+        assert_eq!(
+            tab.split_axis_at(tab.focused),
+            Some(pane_grid::Axis::Vertical),
+            "the divider beside the pane did not flip"
+        );
+        let left = tab
+            .pane_grid
+            .panes
+            .iter()
+            .find(|(_, p)| p.id == left_id)
+            .map(|(handle, _)| *handle)
+            .expect("the first pane survived");
+        assert_eq!(
+            tab.split_axis_at(left),
+            Some(pane_grid::Axis::Vertical),
+            "the outer divider moved, rearranging panes nobody pointed at"
         );
     }
 

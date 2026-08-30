@@ -164,16 +164,10 @@ impl Oryxis {
             // conditional (`split_menu_rows` / `tab_bar_menu_rows`).
             OverlayContent::SplitMenu => self.split_menu_rows(),
             OverlayContent::TabBarActions => self.tab_bar_menu_rows(),
+            // Counted next to its builder too, for the same reason as
+            // the two above: its rows are conditional.
             OverlayContent::TerminalContextMenu(pane_id, sel) => {
-                // Copy (only with a selection) + Copy All + Paste +
-                // Clear, plus Close pane on split tabs (the same
-                // condition `build_menu_terminal_context` renders by).
-                let base = if sel.is_some() { 4.0 } else { 3.0 };
-                let is_split = self
-                    .pane_tab_index(*pane_id)
-                    .and_then(|i| self.tabs.get(i))
-                    .is_some_and(|t| t.pane_grid.panes.len() > 1);
-                if is_split { base + 1.0 } else { base }
+                self.terminal_context_menu_rows(*pane_id, sel)
             }
             OverlayContent::SessionLogViewerContext(sel) => {
                 // Copy (only with a selection) + Copy All.

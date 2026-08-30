@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "แบ่งซ้ายขวา",
         "split_stacked" => "แบ่งบนล่าง",
         "maximize_pane" => "ขยายบานหน้าต่าง",
+        "pane_rearrange_side_by_side" => "เคียงข้างกัน",
+        "pane_rearrange_stacked" => "ซ้อนกัน",
         "pane_border_inactive" => "เส้นขอบบานหน้าต่างที่ไม่ได้ใช้งาน",
         "pane_gap" => "ระยะห่างระหว่างบานหน้าต่าง",
         "pane_gap_none" => "ไม่มี",

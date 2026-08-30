@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "פיצול זה לצד זה",
         "split_stacked" => "פיצול זה מעל זה",
         "maximize_pane" => "הגדל חלונית",
+        "pane_rearrange_side_by_side" => "זה לצד זה",
+        "pane_rearrange_stacked" => "זה מעל זה",
         "pane_border_inactive" => "מסגרת לחלוניות לא פעילות",
         "pane_gap" => "מרווח בין חלוניות",
         "pane_gap_none" => "ללא",

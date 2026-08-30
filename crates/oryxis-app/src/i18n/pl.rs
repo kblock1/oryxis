@@ -189,6 +189,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Podziel obok siebie",
         "split_stacked" => "Podziel w pionie",
         "maximize_pane" => "Maksymalizuj panel",
+        "pane_rearrange_side_by_side" => "Obok siebie",
+        "pane_rearrange_stacked" => "Pod sobą",
         "pane_border_inactive" => "Obramowanie nieaktywnych paneli",
         "pane_gap" => "Odstęp między panelami",
         "pane_gap_none" => "Brak",

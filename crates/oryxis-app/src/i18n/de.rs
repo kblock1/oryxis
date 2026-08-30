@@ -188,6 +188,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Nebeneinander teilen",
         "split_stacked" => "Übereinander teilen",
         "maximize_pane" => "Bereich maximieren",
+        "pane_rearrange_side_by_side" => "Nebeneinander",
+        "pane_rearrange_stacked" => "Übereinander",
         "pane_border_inactive" => "Umriss inaktiver Bereiche",
         "pane_gap" => "Abstand zwischen Bereichen",
         "pane_gap_none" => "Keiner",

@@ -188,6 +188,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "左右に分割",
         "split_stacked" => "上下に分割",
         "maximize_pane" => "ペインを最大化",
+        "pane_rearrange_side_by_side" => "左右に並べる",
+        "pane_rearrange_stacked" => "上下に並べる",
         "pane_border_inactive" => "非アクティブなペインを枠線で囲む",
         "pane_gap" => "ペイン間の余白",
         "pane_gap_none" => "なし",

@@ -188,6 +188,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Diviser côte à côte",
         "split_stacked" => "Diviser empilé",
         "maximize_pane" => "Agrandir le panneau",
+        "pane_rearrange_side_by_side" => "Côte à côte",
+        "pane_rearrange_stacked" => "Empilé",
         "pane_border_inactive" => "Contour des panneaux inactifs",
         "pane_gap" => "Espace entre les panneaux",
         "pane_gap_none" => "Aucun",

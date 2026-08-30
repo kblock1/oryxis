@@ -189,6 +189,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Chia cạnh nhau",
         "split_stacked" => "Chia chồng lên nhau",
         "maximize_pane" => "Phóng to khung",
+        "pane_rearrange_side_by_side" => "Cạnh nhau",
+        "pane_rearrange_stacked" => "Chồng lên nhau",
         "pane_border_inactive" => "Viền cho khung không hoạt động",
         "pane_gap" => "Khoảng cách giữa các khung",
         "pane_gap_none" => "Không",

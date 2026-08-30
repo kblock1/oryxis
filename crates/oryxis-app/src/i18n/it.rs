@@ -188,6 +188,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "split_side_by_side" => "Dividi affiancato",
         "split_stacked" => "Dividi impilato",
         "maximize_pane" => "Ingrandisci riquadro",
+        "pane_rearrange_side_by_side" => "Affiancati",
+        "pane_rearrange_stacked" => "Impilati",
         "pane_border_inactive" => "Contorno dei riquadri inattivi",
         "pane_gap" => "Spazio tra i riquadri",
         "pane_gap_none" => "Nessuno",
