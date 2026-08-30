@@ -344,7 +344,7 @@ impl Oryxis {
                 // surfaces are hidden for unsplit tabs, so a lingering
                 // armed state would be invisible) and drop the survivor's
                 // opt-out so a later re-arm starts clean.
-                if tab.pane_grid.panes.len() < 2 && tab.broadcast {
+                if !tab.broadcast_capable() && tab.broadcast {
                     tab.broadcast = false;
                     for pane in tab.pane_grid.panes.values_mut() {
                         pane.broadcast_opt_out = false;
@@ -520,7 +520,7 @@ impl Oryxis {
                     // and menu entry are hidden there, so this path is only
                     // reachable via the hotkey / command palette. Disarming
                     // stays unconditional so no state can ever get stuck.
-                    if !tab.broadcast && tab.pane_grid.panes.len() < 2 {
+                    if !tab.broadcast && !tab.broadcast_capable() {
                         self.set_toast(crate::i18n::t("broadcast_needs_split_hint").to_string());
                         return crate::shortcuts::toast_clear_after_secs(4);
                     }

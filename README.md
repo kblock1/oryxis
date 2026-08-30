@@ -131,8 +131,9 @@ matching installer. Windows binaries are Authenticode-signed (see
   and server-to-server copy; every SSH tab also carries a Files sidebar
   that follows your shell's working directory. Prefer typing? An
   interactive SFTP console speaks `sftp(1)`'s commands (`get`, `put`,
-  `mget`, `lcd`, globs, Tab completion, inline progress) in a tab of its
-  own, opened from any SSH host.
+  `mget`, `lcd`, globs, Tab completion, inline progress), opening as a
+  pane of the session you are already in (stacked, beside or zoomed,
+  your choice) with one switch between terminal, console and files.
 - **Session recording.** Encrypted at rest; exports to asciinema `.cast`
   (theme embedded) or plain transcript, output-only by design.
 - **The sysadmin toolbox.** An optional network tools panel (off by

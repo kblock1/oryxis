@@ -120,6 +120,7 @@ impl Oryxis {
                 | TabsMessage::ActivateStripSlot(..)
                 | TabsMessage::CopyTabAddress(..)
                 | TabsMessage::ToggleTabFilesMode(..)
+                | TabsMessage::ShowTabSurface(..)
                 | TabsMessage::DetachTabSftp(..)
                 | TabsMessage::CloseTabSftpSession(..)
                 | TabsMessage::OpenTerminalForSftpTab(..)

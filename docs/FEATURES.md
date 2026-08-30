@@ -375,14 +375,19 @@ panel turns it on, next to the other optional ones). Switching it back off close
 
 - **Dual-pane layout.** Local and remote side by side, with sortable
   columns.
-- **Interactive console.** A tab that speaks `sftp(1)`: `get`, `put`,
+- **Interactive console.** A surface that speaks `sftp(1)`: `get`, `put`,
   `mget`, `mput`, `reget`, `reput`, `ls`, `cd`, `lcd`, `lls`, `lpwd`,
   `mkdir`, `lmkdir`, `rm`, `rmdir`, `rename`, `chmod`, `progress`,
   `version` and `help`, with globs, Tab completion on remote paths, a
   command history and byte-level progress inline. Opened from the host
   card, the tab menu or Ctrl+Shift+S (Cmd+Shift+S on macOS), and offered
   only on SSH hosts that are not carrying mosh, since it dials the same
-  way a shell does and mosh closes the session it is handed. It emits
+  way a shell does and mosh closes the session it is handed. Asked for on
+  a live session it lands as a PANE of that tab, stacked under the shell,
+  beside it or zoomed over it (Settings > SFTP), and the tab's mode chip,
+  the status bar and Ctrl+Shift+S all switch between terminal, console
+  and files. Asked for from a host card, where there is no tab to place
+  it in, it still opens one of its own. It emits
   OSC 133 marks around its own prompt, which it can place exactly rather
   than guess, so the tab's activity indicator knows when a transfer is
   running and whether it failed. Its commands stay out of the per-host
@@ -790,7 +795,9 @@ the app's own actions sit on `Ctrl+Shift`.
 | `Ctrl+Shift+Y` | Reopen the last closed tab |
 | `Ctrl+Shift+R` | Reconnect the active tab |
 | `Ctrl+Shift+F` | Toggle Files mode on an SSH tab |
-| `Ctrl+Shift+S` | Open an SFTP console on the active tab's host |
+| `Ctrl+Shift+S` | Open the active tab's SFTP console, or switch between it and the shell |
+| `Ctrl+Shift+Z` | Maximize / restore the focused pane |
+| `Ctrl+Shift+D` / `Ctrl+Shift+O` | Split the tab side by side / stacked |
 | `Ctrl+Shift+H` | Focus the terminal sidebar |
 | `Ctrl+Shift+P` | Command palette |
 | `Ctrl+Shift+L` | Open local terminal |

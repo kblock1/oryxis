@@ -463,19 +463,22 @@ impl Oryxis {
             .host_accent_enabled()
             .then(|| sg_custom_color.or(lt_color).or(host_accent))
             .flatten();
-        // Hybrid mode glyph (issue #61): the chip (>_ terminal /
-        // folder files) only exists once the tab HAS an SFTP session
-        // (owner QA 2026-07-05: a plain SSH tab shows no glyph; the
-        // tab menu's "Open SFTP session" creates it and the toggle
-        // appears). An in-Files-mode tab always keeps it (the way
-        // back), even after a disconnect or feature toggle.
-        let files_mode = self.tab_has_sftp_session(tab).then_some(tab.files_mode);
+        // Mode glyph (issue #61): the chip (>_ terminal / console /
+        // folder files) only exists once the tab has a SECOND surface
+        // to switch to (owner QA 2026-07-05: a plain SSH tab shows no
+        // glyph; the tab menu's "Open SFTP session" creates one and the
+        // switch appears, and so does opening an SFTP console). An
+        // in-Files-mode tab always keeps it (the way back), even after
+        // a disconnect or feature toggle.
+        let mode = self
+            .tab_next_surface(idx)
+            .map(|next| (self.tab_surface(idx), next));
         if is_dragging {
             // The dragged tab floats as a ghost following the cursor;
             // leave a same-width gap here that the other tabs slide
             // around as the reorder happens.
             let gap_w = if tab.pinned && ctx.compact_pins {
-                pinned_chip_width(files_mode)
+                pinned_chip_width(mode)
             } else {
                 width
             };
@@ -500,7 +503,7 @@ impl Oryxis {
                 busy_frame,
                 self.prefs.tab_accent_text,
                 ctx.solid_fill,
-                files_mode,
+                mode,
                 number,
             )
         } else {
@@ -558,7 +561,7 @@ impl Oryxis {
                 // A transfer the user started wins over the shell's own
                 // OSC 9;4 report: it is the thing they are waiting on.
                 zmodem_progress.or(sftp_progress).or(tab.active().progress),
-                files_mode,
+                mode,
                 tab_address,
                 number,
             )

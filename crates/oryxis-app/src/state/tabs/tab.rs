@@ -610,11 +610,68 @@ impl TerminalTab {
         let Some(adj) = self.pane_grid.adjacent(self.focused, dir) else {
             return false;
         };
-        self.focused = adj;
-        if self.pane_grid.maximized().is_some() {
-            self.pane_grid.maximize(adj);
-        }
+        self.focus_handle(adj);
         true
+    }
+
+    /// Focus a specific pane, carrying the zoom the way `focus_adjacent`
+    /// does.
+    ///
+    /// Split out because the surface switch (Terminal / Console) picks
+    /// its pane by PURPOSE rather than by direction, and a switch that
+    /// left the zoom behind would focus a pane nobody can see. A handle
+    /// that is no longer in the grid is a no-op, not a panic: the pane
+    /// may have been closed between the frame that drew the control and
+    /// the message it sent.
+    pub fn focus_handle(&mut self, handle: pane_grid::Pane) {
+        if !self.pane_grid.panes.contains_key(&handle) {
+            return;
+        }
+        self.focused = handle;
+        if self.pane_grid.maximized().is_some() {
+            self.pane_grid.maximize(handle);
+        }
+    }
+
+    /// Zoom a specific pane, whatever the current zoom state is.
+    pub fn maximize_handle(&mut self, handle: pane_grid::Pane) {
+        if !self.pane_grid.panes.contains_key(&handle) {
+            return;
+        }
+        self.focused = handle;
+        self.pane_grid.maximize(handle);
+    }
+
+    /// The tab's SFTP console pane, if it has one.
+    ///
+    /// One per tab by construction (`open_sftp_console_in_tab` focuses
+    /// an existing console instead of splitting a second one), so the
+    /// first match IS the console.
+    pub fn console_pane(&self) -> Option<pane_grid::Pane> {
+        self.pane_grid
+            .panes
+            .iter()
+            .find(|(_, p)| p.purpose == PanePurpose::SftpConsole)
+            .map(|(handle, _)| *handle)
+    }
+
+    /// A pane running an ordinary session, if the tab has one. The
+    /// FOCUSED pane wins when it qualifies, so switching away from the
+    /// console and back returns to the shell the user was in rather
+    /// than to whichever one the grid lists first.
+    pub fn shell_pane(&self) -> Option<pane_grid::Pane> {
+        if self
+            .pane_grid
+            .get(self.focused)
+            .is_some_and(|p| p.purpose != PanePurpose::SftpConsole)
+        {
+            return Some(self.focused);
+        }
+        self.pane_grid
+            .panes
+            .iter()
+            .find(|(_, p)| p.purpose != PanePurpose::SftpConsole)
+            .map(|(handle, _)| *handle)
     }
 
     /// Zoom the focused pane to the whole tab, or restore the split.
@@ -679,18 +736,61 @@ impl TerminalTab {
         self.pane_grid.panes.len()
     }
 
+    /// The pane a TAB-LEVEL SFTP surface resolves against.
+    ///
+    /// `shell_pane`, not `active()`, and that difference is the whole
+    /// point: an SFTP console's transport is not SSH (`ssh()` is `None`
+    /// there, which is also what keeps the console handover from
+    /// re-entering itself), so resolving Files mode against the focused
+    /// pane made it decline on a tab that plainly has a session, and
+    /// decline SILENTLY, because "no session" is a legitimate state
+    /// there. Falls back to `active()` on a tab that is nothing but a
+    /// console, so the answer is always a pane.
+    pub fn sftp_source(&self) -> &Pane {
+        self.shell_pane()
+            .and_then(|handle| self.pane_grid.get(handle))
+            .unwrap_or_else(|| self.active())
+    }
+
+    /// Whether broadcast input has anything to broadcast TO: two or
+    /// more panes that take the fan-out.
+    ///
+    /// Not `pane_count() > 1`, because an SFTP console never takes it
+    /// (see `broadcast_target_ids`). A shell beside a console would
+    /// otherwise offer an arm that reaches exactly one pane, which is
+    /// the "armed and doing nothing" state the gate exists to prevent.
+    pub fn broadcast_capable(&self) -> bool {
+        self.pane_grid
+            .panes
+            .values()
+            .filter(|p| p.purpose != PanePurpose::SftpConsole)
+            .count()
+            > 1
+    }
+
     /// Broadcast input (C2): the pane ids a user-input write reaches. When
     /// armed, every participating pane (not opted out, not mid-ZMODEM); when
     /// disarmed, only the active pane (unless it is mid-ZMODEM, which owns its
     /// byte channel). The single routing source of truth, shared by the write
     /// funnel and its test. `files_mode` suppression is the caller's early
     /// return, not modeled here.
+    ///
+    /// An SFTP console never takes the FAN-OUT, whatever it costs the
+    /// symmetry: broadcast exists to run one command on several servers,
+    /// and the console speaks its own small language, so `systemctl
+    /// restart nginx` sent to every pane would land there as an unknown
+    /// command at best. It is still the target when it is the pane the
+    /// user is typing in, which is the branch below.
     pub fn broadcast_target_ids(&self) -> Vec<Uuid> {
         if self.broadcast {
             self.pane_grid
                 .panes
                 .values()
-                .filter(|p| !p.broadcast_opt_out && p.zmodem.is_none())
+                .filter(|p| {
+                    !p.broadcast_opt_out
+                        && p.zmodem.is_none()
+                        && p.purpose != PanePurpose::SftpConsole
+                })
                 .map(|p| p.id)
                 .collect()
         } else {
@@ -812,6 +912,118 @@ mod terminal_tab_tests {
         tab.toggle_maximize();
         assert!(tab.pane_grid.maximized().is_none());
         assert_eq!(tab.pane_grid.panes.len(), 2, "both panes survive the round trip");
+    }
+
+    /// The surface switch has to carry the zoom for exactly the reason
+    /// `focus_adjacent` does, and it is a DIFFERENT call: it picks its
+    /// pane by purpose, not by direction. A zoomed console switched
+    /// back to the terminal must zoom the terminal, not focus a pane
+    /// hidden behind the console.
+    #[test]
+    fn focusing_a_named_pane_carries_the_zoom() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let first = tab.focused;
+        let console = split(&mut tab, pane_grid::Axis::Horizontal);
+        tab.pane_by_id_mut(tab.pane_grid.get(console).unwrap().id)
+            .unwrap()
+            .purpose = PanePurpose::SftpConsole;
+        tab.maximize_handle(console);
+        assert_eq!(tab.pane_grid.maximized(), Some(console));
+
+        tab.focus_handle(first);
+        assert_eq!(tab.focused, first);
+        assert_eq!(
+            tab.pane_grid.maximized(),
+            Some(first),
+            "the zoom stayed on a pane nobody is typing into"
+        );
+    }
+
+    /// The two ends of the switch, resolved by PURPOSE. `shell_pane`
+    /// prefers the focused pane so leaving the console and coming back
+    /// returns to the shell the user was in, not to whichever one the
+    /// grid happens to list first.
+    #[test]
+    fn console_and_shell_panes_resolve_by_purpose() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let first = tab.focused;
+        assert_eq!(tab.console_pane(), None, "a plain tab has no console");
+        assert_eq!(tab.shell_pane(), Some(first));
+
+        let second = split(&mut tab, pane_grid::Axis::Vertical);
+        let console = split(&mut tab, pane_grid::Axis::Horizontal);
+        tab.pane_grid.get_mut(console).unwrap().purpose = PanePurpose::SftpConsole;
+
+        assert_eq!(tab.console_pane(), Some(console));
+        tab.focused = second;
+        assert_eq!(tab.shell_pane(), Some(second), "the focused shell wins");
+        tab.focused = console;
+        assert!(
+            tab.shell_pane().is_some_and(|p| p != console),
+            "standing on the console still names a shell to go back to"
+        );
+    }
+
+    /// Files mode resolves against the SHELL, not the focused pane.
+    ///
+    /// The console's transport has no `ssh()` to hand over (that is
+    /// what keeps its own handover from re-entering itself), so asking
+    /// for Files while standing in the console read as "this tab has
+    /// no session" and declined in silence, which is a legitimate
+    /// state there and therefore invisible. Worst in the zoomed
+    /// layout, where the console is the only pane on screen.
+    #[test]
+    fn files_mode_resolves_against_the_shell_not_the_console() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let shell = tab.focused;
+        let shell_id = tab.pane_grid.get(shell).unwrap().id;
+        let console = split(&mut tab, pane_grid::Axis::Horizontal);
+        tab.pane_grid.get_mut(console).unwrap().purpose = PanePurpose::SftpConsole;
+
+        // Standing in the console, which is where the zoomed layout
+        // leaves the user.
+        tab.focused = console;
+        assert_eq!(tab.active().id, tab.pane_grid.get(console).unwrap().id);
+        assert_eq!(
+            tab.sftp_source().id,
+            shell_id,
+            "Files mode asked the console for an SSH session"
+        );
+
+        // With the shell focused the two agree, which is what keeps the
+        // "a split tab resolves by the focused pane" contract intact.
+        tab.focused = shell;
+        assert_eq!(tab.sftp_source().id, shell_id);
+    }
+
+    /// A console never takes the broadcast fan-out, and the tab stops
+    /// offering the arm when the console is the only other pane: an
+    /// armed broadcast reaching exactly one pane is the state that
+    /// reads as working and is not.
+    #[test]
+    fn broadcast_skips_the_console_pane() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let shell = tab.focused;
+        let console = split(&mut tab, pane_grid::Axis::Horizontal);
+        tab.pane_grid.get_mut(console).unwrap().purpose = PanePurpose::SftpConsole;
+        let console_id = tab.pane_grid.get(console).unwrap().id;
+        assert!(!tab.broadcast_capable(), "shell + console is not a broadcast");
+
+        tab.broadcast = true;
+        let targets = tab.broadcast_target_ids();
+        assert!(!targets.contains(&console_id), "the fan-out reached the console");
+        assert_eq!(targets.len(), 1);
+
+        // Typing INTO the console still writes to it: the exclusion is
+        // about the fan-out, not about the pane being writable.
+        tab.broadcast = false;
+        tab.focused = console;
+        assert_eq!(tab.broadcast_target_ids(), vec![console_id]);
+
+        // A second shell makes it a broadcast again, console or not.
+        tab.focused = shell;
+        let _third = split(&mut tab, pane_grid::Axis::Vertical);
+        assert!(tab.broadcast_capable());
     }
 
     /// The zoom follows the focus. Without this, walking the panes while

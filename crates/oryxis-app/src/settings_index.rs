@@ -227,6 +227,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Mcp, "mcp_token_regenerate", "mcp token regenerate rotate reset auth"),
     e(S::Mcp, "mcp_install_claude", "mcp install claude code config register"),
     // ── SFTP ───────────────────────────────────────────────────────
+    e(S::Sftp, "setting_sftp_console_layout", "sftp console placement split pane beside below maximized zoom full tab"),
     e(S::Sftp, "setting_default_editor", "sftp default editor external open program"),
     e(S::Sftp, "setting_sftp_ask_download_dir", "sftp download destination folder ask where save prompt"),
     e(S::Sftp, "default_download_dir", "download folder directory default zmodem transfer rz sz save"),

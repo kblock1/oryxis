@@ -219,6 +219,10 @@ pub enum SettingsMessage {
     SettingMonitorIntervalChanged(String),
     ToggleSftpAskDownloadDir,
     ToggleSftpUploadTempName,
+    /// Settings > SFTP: where an SFTP console opened on a live tab
+    /// lands (stacked / beside / zoomed). Carries the picked label,
+    /// like every other pick_list row.
+    SftpConsoleLayoutChanged(String),
     /// Settings > SFTP: the single external editor used by the remote
     /// "Open with default text editor" action (issue #84).
     SettingSftpDefaultEditorChanged(String),
