@@ -69,6 +69,19 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.16.0" date="2026-08-30">
+      <description>
+        <p>
+          Adds an interactive SFTP console in a tab of its own, an
+          optional network tools panel (DNS, ping, traceroute, port
+          test, HTTP, TLS, WHOIS and blocklists), a per-host East Asian
+          ambiguous-width setting, and drag-and-drop uploads that can
+          ride ZMODEM into a container. Fixes clipped Chinese, Japanese
+          and Korean labels.
+        </p>
+      </description>
+      <url>https://github.com/wilsonglasser/oryxis/releases/tag/v0.16.0</url>
+    </release>
     <release version="0.15.0" date="2026-08-24">
       <description>
         <p>

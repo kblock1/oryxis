@@ -4,6 +4,59 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-08-30
+
+Two surfaces that open in tabs of their own: an interactive SFTP console
+for people who would rather type than drag, and an optional network
+tools panel for the questions asked while a host will not connect.
+Alongside them, East Asian ambiguous width becomes a per-host answer,
+and the CJK font fix stops Chinese, Japanese and Korean labels from
+looking cut off.
+
+### Added
+- Interactive SFTP console in a tab of its own: `sftp(1)` commands,
+  globs, Tab completion on remote paths, a command history and byte-level
+  progress inline (#188).
+- The console opens from the host card, the tab menu or Ctrl+Shift+S
+  (Cmd+Shift+S on macOS). SSH hosts only, and not a host carrying mosh.
+- Console commands stay out of the per-host command history.
+- Network tools panel in its own tab: DNS, ping, traceroute, port test,
+  HTTP, TLS certificate, WHOIS and eight public blocklists. Off by
+  default; Settings > Advanced turns it on.
+- Ping and traceroute need no `ping` or `traceroute` installed on Linux,
+  or on Windows for IPv4.
+- Port test takes up to 64 ports and reports open, refused and filtered
+  as three different answers.
+- Per-host East Asian ambiguous width (Auto / Narrow / Wide), in the
+  host editor and the sidebar's Host config tab. Auto reads the host's
+  encoding.
+- The tab strip answers a right-click and the `+` popover offers the
+  reopen, so a closed tab comes back without the hotkey (#186).
+- Per-host opt-in that carries dropped files over ZMODEM instead of
+  SFTP, for a shell running inside a container (#192, by @shideqin).
+
+### Security
+- The SFTP console refuses a downloaded file name that is not a single
+  plain path component. A hostile server could answer a glob with
+  `..\..\evil.exe` or `C:evil` and steer a `get` outside the local
+  working directory on Windows.
+- The SFTP console prints remote file names with control characters
+  replaced by `?`. A name could otherwise clear the screen, forge the
+  console's own prompt marks, or reach the clipboard through OSC 52.
+- Ping and traceroute refuse a target starting with a dash, which the
+  system binary would have read as one of its own flags.
+
+### Fixed
+- Chinese, Japanese and Korean labels no longer look cut off: the
+  downloaded CJK font never reached the fallback chain (#189).
+- Open Plugins opens the plugin settings from outside Settings (#193).
+- Sidebar Files rows answer Delete and the context menu without the
+  keyboard ring (#191, by @shideqin).
+- A serial host no longer panics on an unusual baud rate
+  (serialport 4.10.1).
+- Zero-width characters past the cell limit no longer grow a cell
+  without bound (alacritty).
+
 ## [0.15.0] - 2026-08-24
 
 The mosh release, and the first since 0.10 to carry a security section.

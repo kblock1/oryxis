@@ -378,7 +378,7 @@ turns it on). Switching it back off closes the tab with it.
 - **Interactive console.** A tab that speaks `sftp(1)`: `get`, `put`,
   `mget`, `mput`, `reget`, `reput`, `ls`, `cd`, `lcd`, `lls`, `lpwd`,
   `mkdir`, `lmkdir`, `rm`, `rmdir`, `rename`, `chmod`, `progress`,
-  `version` and `help`, with globs, Tab completion on both sides, a
+  `version` and `help`, with globs, Tab completion on remote paths, a
   command history and byte-level progress inline. Opened from the host
   card, the tab menu or Ctrl+Shift+S (Cmd+Shift+S on macOS), and offered
   only on SSH hosts that are not carrying mosh, since it dials the same
