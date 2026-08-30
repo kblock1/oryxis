@@ -375,6 +375,18 @@ turns it on). Switching it back off closes the tab with it.
 
 - **Dual-pane layout.** Local and remote side by side, with sortable
   columns.
+- **Interactive console.** A tab that speaks `sftp(1)`: `get`, `put`,
+  `mget`, `mput`, `reget`, `reput`, `ls`, `cd`, `lcd`, `lls`, `lpwd`,
+  `mkdir`, `lmkdir`, `rm`, `rmdir`, `rename`, `chmod`, `progress`,
+  `version` and `help`, with globs, Tab completion on both sides, a
+  command history and byte-level progress inline. Opened from the host
+  card, the tab menu or Ctrl+Shift+S (Cmd+Shift+S on macOS), and offered
+  only on SSH hosts that are not carrying mosh, since it dials the same
+  way a shell does and mosh closes the session it is handed. It emits
+  OSC 133 marks around its own prompt, which it can place exactly rather
+  than guess, so the tab's activity indicator knows when a transfer is
+  running and whether it failed. Its commands stay out of the per-host
+  command history, which exists to be re-inserted into a shell.
 - **Open / Edit, in the background.** Hands a remote file to your OS
   default application, the editor you configured, or the OS "open with"
   picker, chosen right where you open it, then watches the local copy
@@ -775,8 +787,10 @@ the app's own actions sit on `Ctrl+Shift`.
 | `Ctrl+1...9` | Switch to tab 1-9 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy / paste in the terminal |
 | `Ctrl+Shift+W` | Close tab |
+| `Ctrl+Shift+Y` | Reopen the last closed tab |
 | `Ctrl+Shift+R` | Reconnect the active tab |
 | `Ctrl+Shift+F` | Toggle Files mode on an SSH tab |
+| `Ctrl+Shift+S` | Open an SFTP console on the active tab's host |
 | `Ctrl+Shift+H` | Focus the terminal sidebar |
 | `Ctrl+Shift+P` | Command palette |
 | `Ctrl+Shift+L` | Open local terminal |

@@ -132,7 +132,7 @@ matching installer. Windows binaries are Authenticode-signed (see
   that follows your shell's working directory. Prefer typing? An
   interactive SFTP console speaks `sftp(1)`'s commands (`get`, `put`,
   `mget`, `lcd`, globs, Tab completion, inline progress) in a tab of its
-  own, opened from any host.
+  own, opened from any SSH host.
 - **Session recording.** Encrypted at rest; exports to asciinema `.cast`
   (theme embedded) or plain transcript, output-only by design.
 - **The sysadmin toolbox.** An optional network tools panel (off by
@@ -256,7 +256,7 @@ information is collected or shared as part of this process.
 
 Oryxis ships small and often (roughly weekly). This section is
 forward-looking: items land incrementally as they are ready rather than
-being tied to a specific version. Latest stable is **v0.15.0**;
+being tied to a specific version. Latest stable is **v0.16.0**;
 [CHANGELOG.md](CHANGELOG.md) has the full history, and the
 [roadmap discussion](https://github.com/wilsonglasser/oryxis/discussions/67)
 tracks it interactively.

@@ -555,8 +555,8 @@ impl VaultStore {
                         .ok()
                         .flatten()
                         .filter(|s| !s.trim().is_empty()),
-                    // Last SELECT column; NULL (a row from before the
-                    // migration) reads as off, the standard drop routing.
+                    // NULL (a row from before the migration) reads as
+                    // off, the standard drop routing.
                     zmodem_drops: row
                         .get::<_, Option<i32>>(62)
                         .unwrap_or(None)
