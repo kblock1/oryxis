@@ -579,6 +579,16 @@ async fn get(
     let multiple = sources.len() > 1;
     for source in sources {
         let base = source.rsplit('/').next().unwrap_or(&source).to_string();
+        // `base` is about to become part of a LOCAL path, and for a glob
+        // it is a name the server chose. The `/` split above is not a
+        // guard: `..\..\evil.exe` and `C:evil` carry no slash and both
+        // steer the join on Windows. Skip the entry rather than fail the
+        // whole transfer, and say which name was refused, because a file
+        // silently missing from a `mget` is worse than a loud one.
+        if !crate::sftp::is_safe_entry_name(&base) {
+            line(out, &format!("{base}: skipped, unsafe file name"));
+            continue;
+        }
         let dest = match (&local, multiple) {
             (Some(l), false) => {
                 let p = state.resolve_local(l);
