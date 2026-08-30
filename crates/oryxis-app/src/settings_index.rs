@@ -251,7 +251,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Advanced, "debug_logging", "debug logging enable log file diagnostics"),
     e(S::Advanced, "perf_overlay", "performance hud overlay fps terminal frames"),
     e(
-        S::Advanced,
+        S::Plugins,
         "setting_network_tools",
         "network tools dns ping traceroute port test whois rbl dnsbl tls certificate utilities",
     ),

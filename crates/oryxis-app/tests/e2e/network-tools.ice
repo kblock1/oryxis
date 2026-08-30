@@ -17,19 +17,22 @@ settle
 absent "Network tools"
 type escape
 settle
-# Settings > Advanced carries the toggle. The toggler is hit by position
-# (clicking a toggle row's label does not flip it); this file declares
-# its own viewport so the coordinate is deterministic, and the
-# `expect "Network tools"` below is the loud failure if a row is ever
-# inserted above this one.
+# Settings > Features & Plugins carries the toggle, next to the other
+# optional features: that list is what a user reads to find out what the
+# app can be made to do, and a feature reachable only from Advanced does
+# not exist to them (it lived there first, and the owner could not find
+# it). The toggler is hit by position (clicking a toggle row's label
+# does not flip it); this file declares its own viewport so the
+# coordinate is deterministic, and the `expect` above it is the loud
+# failure if a row is ever inserted between it and the top of the card.
 click (19, 20)
 settle
 click "Settings"
 settle
-click "Advanced"
+click "Features & Plugins"
 settle
 expect "Network tools panel"
-click (1181, 427)
+click (1183, 395)
 settle
 # Now the menu has the entry, and it opens as a tab of its own next to
 # Settings rather than taking over the vault surface.
@@ -61,7 +64,7 @@ expect "No port answered."
 # optional-features rule broken in the one state nobody tests.
 click "Settings"
 settle
-click (1181, 427)
+click (1183, 395)
 settle
 click (57, 20)
 settle

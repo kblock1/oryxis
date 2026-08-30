@@ -308,8 +308,8 @@ coming next, see the [Roadmap](../README.md#roadmap).
 ## Network tools
 
 Off by default, and while it is off the whole thing is invisible: no
-menu entry, no tab, no way in (Settings > Advanced > Network tools
-turns it on). Switching it back off closes the tab with it.
+menu entry, no tab, no way in (Settings > Features > Network tools
+panel turns it on, next to the other optional ones). Switching it back off closes the tab with it.
 
 - **Its own tab, not a sidebar.** The panel opens from the burger menu
   as a full surface next to Settings, so a lookup you are waiting on

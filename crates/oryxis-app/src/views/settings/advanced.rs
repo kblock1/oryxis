@@ -60,15 +60,6 @@ impl Oryxis {
             ),
             Space::new().height(4),
             text(t("perf_overlay_desc")).size(11).color(OryxisColors::t().text_muted),
-            // ── Network tools ──
-            Space::new().height(16),
-            self.nav_toggle_row(
-                t("setting_network_tools"),
-                self.prefs.network_tools,
-                Message::Settings(SettingsMessage::SettingToggleNetworkTools),
-            ),
-            Space::new().height(4),
-            text(t("setting_network_tools_hint")).size(11).color(OryxisColors::t().text_muted),
         ];
 
         // ── Environment information ──
