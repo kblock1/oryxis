@@ -215,13 +215,23 @@ jobs:
       # runner holding 14 GB for the whole job. Cheap now that the cache
       # no longer keeps this directory, since there is nothing to save.
       - name: Reclaim the build directory
-        run: rm -rf target
+        run: |
+          rm -rf target
+          # What is left, and what the .dmg below has to fit into. In the
+          # log on every run, because the failure it guards against
+          # (`hdiutil: create failed`) says nothing about how close the
+          # disk was.
+          df -h /
       - name: Build .dmg
         run: |
           STAGING="$RUNNER_TEMP/dmg"
           mkdir -p "$STAGING"
-          cp -R Oryxis.app "$STAGING/"
+          # `mv`, not `cp -R`: nothing after this reads the bundle from
+          # the workspace (the .dmg is what gets notarized and uploaded),
+          # and a second copy of it is space the image itself needs.
+          mv Oryxis.app "$STAGING/"
           ln -s /Applications "$STAGING/Applications"
+          du -sh "$STAGING"
           hdiutil create -volname "Oryxis" -srcfolder "$STAGING" \
             -ov -format UDZO oryxis-macos-aarch64.dmg
       - name: Notarize .dmg
