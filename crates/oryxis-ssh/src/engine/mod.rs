@@ -4,7 +4,6 @@ use russh::keys::{PublicKey, HashAlg, PrivateKeyWithHashAlg};
 use russh::{client, ChannelMsg};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::process::Command as TokioCommand;
 use tokio::sync::mpsc;
 
 use oryxis_core::models::connection::{
@@ -25,6 +24,7 @@ mod kbi;
 mod monitor_conn;
 mod net_quality;
 mod proxy_consent;
+mod proxy_spawn;
 mod session;
 mod transport;
 mod terminfo;
@@ -39,6 +39,7 @@ pub use transport::SshTransport;
 pub use terminfo::TermFallback;
 pub(crate) use terminfo::*;
 pub(crate) use handler::*;
+pub(crate) use proxy_spawn::ProxyTokens;
 use agent::*;
 use kbi::*;
 
@@ -719,13 +720,20 @@ mod tests {
     /// approval channel gets a refusal, never a spawn.
     #[tokio::test]
     async fn a_command_proxy_needs_an_approval_channel() {
-        // The command is one that would be visible if it ever ran; the
-        // assertion is that neither branch below reaches a shell.
+        // Harmless if it ever does run, because the last branch below
+        // approves it and then it really does: the first two are the
+        // ones asserting nothing reaches a shell.
         const CMD: &str = "echo should-never-run";
+        let dial = ProxyTokens {
+            host: "host.example",
+            port: 22,
+            user: "root",
+            name: "host.example",
+        };
 
         let no_channel = SshEngine::new();
         assert!(matches!(
-            no_channel.proxy_command(CMD, "host.example", 22).await.err(),
+            no_channel.proxy_command(CMD, &dial).await.err(),
             Some(SshError::ProxyCommandNotApproved),
         ));
 
@@ -734,29 +742,25 @@ mod tests {
         let refusing = SshEngine::new()
             .with_proxy_command_ask(trusted_only_proxy_command_ask(Default::default()));
         assert!(matches!(
-            refusing.proxy_command(CMD, "host.example", 22).await.err(),
+            refusing.proxy_command(CMD, &dial).await.err(),
             Some(SshError::ProxyCommandNotApproved),
         ));
 
         // Approved: the same call now spawns, which is what keeps the
         // gate from breaking every legitimate ProxyCommand host.
         //
-        // Unix only, because it really does spawn: `proxy_command`
-        // runs `sh -c`, and there is no `sh` on a stock Windows box
-        // (the same reason a ProxyCommand host does not work there).
-        // The two refusals above are the security half and run
-        // everywhere.
-        #[cfg(unix)]
-        {
-            let approved = SshEngine::new().with_proxy_command_ask(
-                trusted_only_proxy_command_ask(
-                    [oryxis_core::models::connection::proxy_command_fingerprint(CMD)]
-                        .into_iter()
-                        .collect(),
-                ),
-            );
-            assert!(approved.proxy_command(CMD, "host.example", 22).await.is_ok());
-        }
+        // This half used to be Unix-only, because the spawn was `sh -c`
+        // and a stock Windows box has no `sh`. That was not a quirk of
+        // the test, it was the bug: a ProxyCommand host could not
+        // connect on Windows at all. `proxy_spawn` picks the local
+        // shell, so the assertion now runs everywhere and this is the
+        // regression test for it.
+        let approved = SshEngine::new().with_proxy_command_ask(trusted_only_proxy_command_ask(
+            [oryxis_core::models::connection::proxy_command_fingerprint(CMD)]
+                .into_iter()
+                .collect(),
+        ));
+        assert!(approved.proxy_command(CMD, &dial).await.is_ok());
     }
 
     #[test]

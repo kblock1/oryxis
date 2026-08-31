@@ -764,12 +764,18 @@ pub enum ProxyType {
 /// per-device approval a `ProxyType::Command` needs before it may be
 /// spawned (`VaultStore::is_proxy_command_trusted`).
 ///
-/// The hash IS the identity of what runs: `proxy_command` executes the
-/// string verbatim, with no `%h` / `%p` substitution, so approving the
-/// string approves exactly that process and nothing else. Editing a
-/// single character mints a different fingerprint and the approval has
-/// to be given again, which is what stops a trusted line from being
-/// quietly rewritten into another one.
+/// The hash is taken over the line AS STORED, tokens and all, which is
+/// also the form the approval prompt shows. Editing a single character
+/// mints a different fingerprint and the approval has to be given again,
+/// which is what stops a trusted line from being quietly rewritten into
+/// another one.
+///
+/// `%h` / `%n` / `%p` / `%r` are resolved after the gate, not before, so one
+/// approval covers every host that shares the proxy rather than
+/// re-prompting per target. That splits the identity of what runs in
+/// two: the line is pinned here, and the values allowed into its token
+/// slots are constrained where the substitution happens
+/// (`oryxis-ssh`'s `proxy_spawn`), to shapes that cannot restructure it.
 ///
 /// Hashed rather than stored in the clear because the line is
 /// user-authored and can embed credentials (the connect log already

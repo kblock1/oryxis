@@ -2,6 +2,16 @@ use super::*;
 
 use russh::{MethodKind, MethodSet};
 
+/// The login name a dial authenticates as.
+///
+/// One answer in one place, because it is read twice: the auth path
+/// sends it, and a `ProxyCommand` line's `%r` names it. Two spellings of
+/// the same fallback would let a proxy be told about a user the session
+/// never logs in as.
+pub(crate) fn effective_username(connection: &Connection) -> &str {
+    connection.username.as_deref().unwrap_or("root")
+}
+
 impl SshEngine {
     // -----------------------------------------------------------------------
     // Authentication
@@ -15,7 +25,7 @@ impl SshEngine {
         password: Option<&str>,
         key_material: Option<KeyMaterial<'_>>,
     ) -> Result<(), SshError> {
-        let username = connection.username.as_deref().unwrap_or("root");
+        let username = effective_username(connection);
         let has_pw = password.is_some();
         let has_key = key_material.is_some();
         tracing::info!(

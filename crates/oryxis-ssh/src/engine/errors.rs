@@ -37,8 +37,69 @@ pub enum SshError {
     #[error("Command proxy not approved on this device")]
     ProxyCommandNotApproved,
 
+    /// A `ProxyType::Command` proxy failed on its way to carrying a
+    /// dial. Kept apart from the free-text `Proxy` above so the cause
+    /// survives as data; see [`ProxyCommandError`].
+    #[error("Proxy error: {0}")]
+    ProxyCommand(#[from] ProxyCommandError),
+
     #[error("Jump host error: {0}")]
     JumpHost(String),
+}
+
+/// Why a `ProxyType::Command` proxy could not carry a dial.
+///
+/// Structured rather than a formatted `SshError::Proxy(String)` for the
+/// same reason [`NegotiationFailure`] is a type: naming the cause in the
+/// user's language is the app's job, and parsing an error string back
+/// apart is not a language boundary. Nothing here is translated yet (the
+/// sentence the connect path wraps it in is still English too); the
+/// shape is what makes translating it later a rendering change instead
+/// of a rewrite.
+#[derive(Debug, Clone, Error)]
+pub enum ProxyCommandError {
+    /// A `%h` / `%n` / `%r` value is not the shape of a host or a login
+    /// name, so it never reached a shell. `token` is the spelling as
+    /// written in the line (`"%h"`).
+    ///
+    /// The value is echoed because it is the connection's own hostname,
+    /// label or username, all of which the host editor already shows in
+    /// the clear. The command line, which may not be, still is not.
+    #[error("ProxyCommand {token} refused: {value:?} is not a plain host or user name")]
+    UnsafeValue {
+        token: &'static str,
+        value: String,
+    },
+
+    /// The local shell could not be started at all.
+    #[error("ProxyCommand spawn: {0}")]
+    Spawn(String),
+
+    /// The proxy ran and the SSH transport over it failed. `stderr` is
+    /// the proxy's own last words, which is usually the only account of
+    /// why: russh only ever saw an EOF during version exchange.
+    ///
+    /// `transport` is the russh failure already rendered, not a
+    /// `source`: naming the field that would make `thiserror` look for
+    /// an `Error` behind it, and what is kept here is the sentence.
+    #[error("SSH over ProxyCommand: {transport}{}", proxy_said(.stderr))]
+    Transport {
+        transport: String,
+        stderr: Vec<String>,
+    },
+}
+
+/// Render a proxy's last words onto the end of a transport failure.
+///
+/// Joined onto one line rather than stacked, because this lands in a
+/// connect-progress row and an error dialog, neither of which is a log
+/// viewer.
+fn proxy_said(lines: &[String]) -> String {
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!(" (the proxy said: {})", lines.join(" | "))
+    }
 }
 
 /// Which SSH negotiation category had no common algorithm. Mirrors the
@@ -81,6 +142,18 @@ impl SshError {
             category,
             server_offers: theirs.clone(),
         })
+    }
+
+    /// If this is a command-proxy failure, the structured cause.
+    ///
+    /// The counterpart to [`Self::negotiation_failure`], and there for
+    /// the same reason: it is what lets the app say why in the user's
+    /// language without matching on a formatted string.
+    pub fn proxy_command_failure(&self) -> Option<&ProxyCommandError> {
+        match self {
+            SshError::ProxyCommand(e) => Some(e),
+            _ => None,
+        }
     }
 }
 
