@@ -231,9 +231,18 @@ jobs:
           # and a second copy of it is space the image itself needs.
           mv Oryxis.app "$STAGING/"
           ln -s /Applications "$STAGING/Applications"
-          du -sh "$STAGING"
+          # The image is sized here, not estimated by hdiutil. Left to
+          # guess from `-srcfolder` it sizes the volume too tightly and
+          # runs out of room copying the bundle in, which it reports as
+          # `create failed - No space left on device`: a message about
+          # the image it is filling, not about the disk underneath (the
+          # runner has tens of GB free at that point). The content is
+          # measured and given 300 MB of headroom, and UDZO compresses
+          # the slack away, so the .dmg that ships is no bigger for it.
+          SIZE_MB=$(( $(du -sm "$STAGING" | cut -f1) + 300 ))
+          echo "staging is $(du -sh "$STAGING" | cut -f1), image sized ${SIZE_MB}m"
           hdiutil create -volname "Oryxis" -srcfolder "$STAGING" \
-            -ov -format UDZO oryxis-macos-aarch64.dmg
+            -size "${SIZE_MB}m" -ov -format UDZO oryxis-macos-aarch64.dmg
       - name: Notarize .dmg
         # Runs only when the App Store Connect secrets are present. Submits the
         # .dmg to Apple, waits for the ticket, then staples it so the app opens
