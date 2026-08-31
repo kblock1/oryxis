@@ -208,6 +208,14 @@ jobs:
             echo "No Developer ID secrets set; applying ad-hoc signature."
             codesign --force --deep --sign - "$APP"
           fi
+      # The .app is self-contained from here on: the signature above and
+      # the .dmg and notarization below all work from it, and nothing
+      # reads `target/` again. Handing those gigabytes back is what
+      # leaves `hdiutil` room for the volume it mounts to compress, on a
+      # runner holding 14 GB for the whole job. Cheap now that the cache
+      # no longer keeps this directory, since there is nothing to save.
+      - name: Reclaim the build directory
+        run: rm -rf target
       - name: Build .dmg
         run: |
           STAGING="$RUNNER_TEMP/dmg"
