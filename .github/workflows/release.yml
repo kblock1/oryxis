@@ -140,13 +140,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # The registry only, never `target/`. A hosted runner has 14 GB of
+      # disk whatever the platform, and this job is the one that spends
+      # it twice: a release `target/` runs to several gigabytes for a
+      # 75 MB binary, and `hdiutil` then mounts the whole .app as a
+      # volume to compress it. Caching the build directory buys back a
+      # few minutes on a job that runs once per tag, and pays for it in
+      # the space the .dmg needs: past a certain size the two do not fit
+      # and `hdiutil` answers `create failed - No space left on device`.
+      #
+      # The key is deliberately new: `actions/cache` restores the archive
+      # it saved, not the paths listed here, so an old entry would extract
+      # the `target/` this stops caching.
       - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/
             ~/.cargo/git/
-            target/
-          key: macos-arm-release-${{ hashFiles('**/Cargo.lock') }}
+          key: macos-arm-release-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --locked --release
       - name: Package tarball
         run: |
