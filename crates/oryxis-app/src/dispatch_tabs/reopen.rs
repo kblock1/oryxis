@@ -12,8 +12,8 @@
 
 use iced::Task;
 
-use crate::app::{Message, Oryxis, SftpMessage};
-use crate::state::ClosedTab;
+use crate::app::{Message, Oryxis, SftpMessage, SshMessage};
+use crate::state::{ClosedTab, ClosedTabSpec};
 
 /// How many closed tabs the stack keeps.
 ///
@@ -33,16 +33,28 @@ impl Oryxis {
     /// `close_tab_now`, `CloseOtherTabs` and `CloseAllTabs`.
     pub(crate) fn remember_closed_tab(&mut self, idx: usize) {
         let Some(tab) = self.tabs.get(idx) else { return };
-        // No spec, no entry: `pin_spec` is what already answers "can this
-        // tab be described well enough to recreate it", and its `None`
-        // arms (quick-connect, SSM) are exactly the ones a reopen could
-        // not honour either. See `ClosedTab`.
-        //
-        // It reads the FOCUSED pane, so a split tab comes back as a
-        // single pane on that host. Same answer pinning gives a split,
-        // and the honest one: the panes are separate live sessions, not
-        // a layout that can be re-dialled as a unit.
-        let Some(spec) = tab.pin_spec() else { return };
+        // `pin_spec` answers first, because everything it can describe
+        // reopens through the pin's own resolution. It reads the FOCUSED
+        // pane, so a split tab comes back as a single pane on that host.
+        // Same answer pinning gives a split, and the honest one: the
+        // panes are separate live sessions, not a layout that can be
+        // re-dialled as a unit.
+        let spec = match tab.pin_spec() {
+            Some(spec) => ClosedTabSpec::Pinned(spec),
+            // What it declines is quick-connect and SSM, and only the
+            // first of those is recoverable: an ad-hoc host is a
+            // `Connection` living in `quick_connects`, which
+            // `prune_quick_connects` is about to drop, so the snapshot
+            // is taken here and owned by the stack. SSM has nothing to
+            // snapshot (`relaunch: None`).
+            None => match &tab.active().origin {
+                crate::state::PaneOrigin::QuickHost(qid) => {
+                    let Some(entry) = self.quick_connects.get(qid) else { return };
+                    ClosedTabSpec::QuickHost(Box::new(quick_snapshot(entry)))
+                }
+                _ => return,
+            },
+        };
         let id = tab._id;
         let after_id = self.chip_to_the_left_of(id);
         self.push_closed_tab(ClosedTab { spec, after_id });
@@ -57,7 +69,10 @@ impl Oryxis {
         let Some(spec) = self.sftp_pin_spec(idx) else { return };
         let Some(id) = self.sftp_tabs.get(idx).map(|t| t.id) else { return };
         let after_id = self.chip_to_the_left_of(id);
-        self.push_closed_tab(ClosedTab { spec, after_id });
+        self.push_closed_tab(ClosedTab {
+            spec: ClosedTabSpec::Pinned(spec),
+            after_id,
+        });
     }
 
     /// Strip id of the chip immediately before `id`, or `None` when it is
@@ -87,6 +102,25 @@ impl Oryxis {
         // nothing that was open.
         self.overlay = None;
         while let Some(entry) = self.closed_tabs.pop() {
+            let spec = match entry.spec {
+                ClosedTabSpec::Pinned(spec) => spec,
+                // An ad-hoc host reopens by putting its `Connection`
+                // back in `quick_connects` and firing the message the
+                // quick-connect card fires, which is also the switch
+                // that routes Telnet / Raw / Serial / Local / remote
+                // desktop to their own connect paths. A dial site of its
+                // own here would be a second one to keep correct.
+                //
+                // `QuickConnect` reuses a live entry for the same id
+                // when one exists, so reopening a tab whose twin is
+                // still open dials with the credentials that twin is
+                // already using instead of asking again.
+                ClosedTabSpec::QuickHost(conn) => {
+                    self.arm_reopen_placement(entry.after_id);
+                    let entry = crate::state::QuickConnectEntry::bare(*conn);
+                    return self.update(Message::Ssh(SshMessage::QuickConnect(Box::new(entry))));
+                }
+            };
             // An SFTP tab is recreated here rather than through
             // `spec_open_message`: it lives in `sftp_tabs`, and its
             // reopen IS the dormant-pin path, a chip that re-mounts its
@@ -97,13 +131,13 @@ impl Oryxis {
             // produces terminal tabs). Below it, every SFTP entry would
             // fall into the `continue` meant for a deleted host and be
             // eaten without a chip to show for it.
-            if matches!(entry.spec, PinnedTabSpec::Sftp { .. }) {
-                return self.reopen_closed_sftp_tab(entry);
+            if matches!(spec, PinnedTabSpec::Sftp { .. }) {
+                return self.reopen_closed_sftp_tab(spec, entry.after_id);
             }
             // The async flag is the dormant path's business (it has a
             // placeholder chip to hold open while a plugin answers);
             // here the placement below covers both kinds.
-            let (open, _async_spawn) = self.spec_open_message(&entry.spec);
+            let (open, _async_spawn) = self.spec_open_message(&spec);
             let Some(open) = open else { continue };
             // Where the chip goes back, through the one door every new
             // tab walks (`place_new_tab_ref`). It resolves the neighbour
@@ -117,12 +151,16 @@ impl Oryxis {
         Task::none()
     }
 
-    fn reopen_closed_sftp_tab(&mut self, entry: ClosedTab) -> Task<Message> {
+    fn reopen_closed_sftp_tab(
+        &mut self,
+        spec: crate::state::PinnedTabSpec,
+        after_id: Option<uuid::Uuid>,
+    ) -> Task<Message> {
         // Dormant, exactly like a pinned SFTP tab restored at boot: the
         // panes re-mount on the first select rather than here, so one
         // path owns the mount and the reopen cannot drift from it.
-        let label = entry.spec.label().to_string();
-        let tab = crate::state::SftpTab::new_dormant(label, entry.spec);
+        let label = spec.label().to_string();
+        let tab = crate::state::SftpTab::new_dormant(label, spec);
         let id = tab.id;
         self.sftp_tabs.push(tab);
         let idx = self.sftp_tabs.len() - 1;
@@ -130,7 +168,7 @@ impl Oryxis {
         // only terminal tabs go through the placement door. Same three
         // answers that door gives, so the two kinds come back to the same
         // place.
-        let at = match entry.after_id {
+        let at = match after_id {
             // It was the first chip, so it comes back as the first chip.
             None => 0,
             Some(a) => self
@@ -168,6 +206,31 @@ impl Oryxis {
     }
 }
 
+/// The `Connection` a quick-connect tab leaves behind when it closes.
+///
+/// A copy of the entry's own, with one correction. The credentials stay
+/// behind (they never lived in `conn`), and an ad-hoc host set to
+/// `Password` has none without them: the engine reads that method as "a
+/// password was supplied", so it would fail the auth outright instead of
+/// asking for one. `PasswordPrompt` is that same method WITH the asking,
+/// which is what a reopen has to do anyway, and it is the method that
+/// deliberately stores nothing.
+///
+/// Only when the password was typed into this entry. A `Password` host
+/// pointing at a saved identity hydrates from the vault on the way back,
+/// and turning it into a prompt would ask the user for something the app
+/// already has.
+fn quick_snapshot(
+    entry: &crate::state::QuickConnectEntry,
+) -> oryxis_core::models::Connection {
+    use oryxis_core::models::connection::AuthMethod;
+    let mut conn = entry.conn.clone();
+    if entry.password.is_some() && conn.auth_method == AuthMethod::Password {
+        conn.auth_method = AuthMethod::PasswordPrompt;
+    }
+    conn
+}
+
 /// Pure half of [`Oryxis::push_closed_tab`], so the cap is testable
 /// without an `Oryxis`.
 fn push_closed(stack: &mut Vec<ClosedTab>, entry: ClosedTab) {
@@ -181,16 +244,68 @@ fn push_closed(stack: &mut Vec<ClosedTab>, entry: ClosedTab) {
 
 #[cfg(test)]
 mod tests {
-    use super::{push_closed, CLOSED_TABS_MAX};
-    use crate::state::{ClosedTab, PinnedTabSpec};
+    use super::{push_closed, quick_snapshot, CLOSED_TABS_MAX};
+    use crate::state::{ClosedTab, ClosedTabSpec, PinnedTabSpec, QuickConnectEntry};
+    use oryxis_core::models::connection::{AuthMethod, Connection};
 
     fn entry(n: u128) -> ClosedTab {
         ClosedTab {
-            spec: PinnedTabSpec::Host {
+            spec: ClosedTabSpec::Pinned(PinnedTabSpec::Host {
                 id: uuid::Uuid::from_u128(n),
                 label: format!("host-{n}"),
-            },
+            }),
             after_id: None,
+        }
+    }
+
+    fn quick(auth: AuthMethod, password: Option<&str>) -> QuickConnectEntry {
+        let mut conn = Connection::new("ad-hoc", "example.test");
+        conn.auth_method = auth;
+        QuickConnectEntry {
+            conn,
+            password: password.map(str::to_string),
+            totp_secret: None,
+            proxy_password: None,
+        }
+    }
+
+    /// The snapshot carries no secret, whatever the entry held. This is
+    /// the whole reason a quick-connect tab may sit in a stack that a pin
+    /// refuses it.
+    #[test]
+    fn the_quick_snapshot_leaves_every_credential_behind() {
+        let entry = quick(AuthMethod::Password, Some("hunter2"));
+        let snapshot = format!("{:?}", quick_snapshot(&entry));
+
+        assert!(!snapshot.contains("hunter2"), "password in the snapshot");
+    }
+
+    /// A typed password becomes a prompt, because the engine would
+    /// otherwise fail `Password` auth outright rather than ask for the
+    /// password the reopen deliberately did not keep.
+    #[test]
+    fn a_typed_password_reopens_as_a_prompt() {
+        let snap = quick_snapshot(&quick(AuthMethod::Password, Some("hunter2")));
+        assert_eq!(snap.auth_method, AuthMethod::PasswordPrompt);
+    }
+
+    /// ...and a `Password` host that never had one typed keeps the
+    /// method: its password comes from the linked identity in the vault,
+    /// and prompting would ask for what the app already has.
+    #[test]
+    fn a_password_host_with_no_typed_password_is_left_alone() {
+        let snap = quick_snapshot(&quick(AuthMethod::Password, None));
+        assert_eq!(snap.auth_method, AuthMethod::Password);
+    }
+
+    /// Every other method is left alone too: `Auto` reaches the
+    /// quick-connect interactive fallback on its own, and `Key` / `Agent`
+    /// authenticate with something that was never in the entry.
+    #[test]
+    fn other_auth_methods_survive_the_snapshot_verbatim() {
+        for auth in [AuthMethod::Auto, AuthMethod::Key, AuthMethod::Agent] {
+            let snap = quick_snapshot(&quick(auth.clone(), Some("hunter2")));
+            assert_eq!(snap.auth_method, auth);
         }
     }
 
@@ -204,15 +319,13 @@ mod tests {
         }
 
         assert_eq!(stack.len(), CLOSED_TABS_MAX);
-        let newest = match &stack.last().unwrap().spec {
-            PinnedTabSpec::Host { id, .. } => *id,
+        let host_id = |e: &ClosedTab| match &e.spec {
+            ClosedTabSpec::Pinned(PinnedTabSpec::Host { id, .. }) => *id,
             _ => unreachable!(),
         };
+        let newest = host_id(stack.last().unwrap());
         assert_eq!(newest, uuid::Uuid::from_u128(CLOSED_TABS_MAX as u128));
-        let oldest = match &stack.first().unwrap().spec {
-            PinnedTabSpec::Host { id, .. } => *id,
-            _ => unreachable!(),
-        };
+        let oldest = host_id(stack.first().unwrap());
         assert_eq!(oldest, uuid::Uuid::from_u128(1), "entry 0 was dropped");
     }
 }

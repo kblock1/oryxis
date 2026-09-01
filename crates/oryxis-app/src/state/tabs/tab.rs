@@ -167,26 +167,46 @@ impl TabPlacement {
     }
 }
 
+/// How a closed tab is brought back (issue #186).
+///
+/// Two arms because a reopen answers a question a pin does not. A pin has
+/// to survive a restart, so it may only hold what can be written down;
+/// this stack lives for one session, so it may also hold a host that was
+/// never saved.
+#[derive(Debug, Clone)]
+pub(crate) enum ClosedTabSpec {
+    /// Everything a pin can describe, reopened through the pin's own
+    /// resolution (`spec_open_message`): a saved host by id, a local
+    /// shell by program + args, a cloud session by its group, an SFTP tab
+    /// by both its panes.
+    Pinned(PinnedTabSpec),
+    /// A quick-connect host, which no pin can name: the entry lives in
+    /// `Oryxis::quick_connects` and `prune_quick_connects` drops it the
+    /// moment its last pane dies, so the stack has to OWN the
+    /// `Connection` rather than a key into a map that will be empty.
+    ///
+    /// What makes this safe is where the credentials live: the password,
+    /// the TOTP secret and an inline proxy's password sit BESIDE `conn`
+    /// in `QuickConnectEntry`, never inside it, so the snapshot is born
+    /// secret-free and the reopen re-asks. That is the whole difference
+    /// from a pin, which would have to keep them across a restart and
+    /// therefore refuses quick-connect outright.
+    QuickHost(Box<oryxis_core::models::Connection>),
+}
+
 /// A tab the user closed, kept so `ReopenClosedTab` can bring it back
 /// (issue #186).
-///
-/// The spec is the one a PIN persists, so reopening a closed tab and
-/// reopening a pinned one resolve through the same code: a saved host by
-/// id (immune to reordering and renaming), a local shell by program +
-/// args, a cloud session by its group, an SFTP tab by both its panes.
-/// `pin_spec` answering `None` is what excludes a tab from the stack,
-/// which keeps quick-connect out of it for the reason it is out of pins:
-/// the entry dies with the tab, and holding it would mean keeping
-/// credentials the user typed once alive past the session that used
-/// them.
 ///
 /// Session-only, never written to the vault. Pinning is this app's "keep
 /// this tab across restarts"; an undo affordance that cost a disk write
 /// per closed tab would be paying a persistence price for the one state
-/// that is meant to be cheap.
+/// that is meant to be cheap. The hard lock drops the whole stack with
+/// the connections it describes; the soft lock keeps it, exactly as it
+/// keeps the live tabs and strips the quick-connect entries of their
+/// secrets without dropping the hosts.
 #[derive(Debug, Clone)]
 pub(crate) struct ClosedTab {
-    pub spec: PinnedTabSpec,
+    pub spec: ClosedTabSpec,
     /// Strip id of the chip that sat immediately to its left, so the
     /// reopen lands back where the tab was rather than at the far end.
     /// `None` = it was the first chip. An id rather than an index because
@@ -553,7 +573,10 @@ impl TerminalTab {
             PaneOrigin::Host(id) => Some(PinnedTabSpec::Host { id: *id, label: base }),
             // Quick-connect hosts have no stable reference to restore from
             // (the entry dies with the app), so the pin is session-only,
-            // like SSM tabs.
+            // like SSM tabs. The closed-tab stack reaches them through its
+            // own arm ([`ClosedTabSpec::QuickHost`]), which is allowed to
+            // hold the ephemeral `Connection` because it dies with the
+            // session too.
             PaneOrigin::QuickHost(_) => None,
             PaneOrigin::Local(spec) => Some(PinnedTabSpec::LocalShell {
                 program: spec.program.clone(),
