@@ -739,6 +739,21 @@ impl Oryxis {
                     }
                 }
             }
+            TerminalMessage::TerminalCopyScreen(pane_id) => {
+                self.overlay = None;
+                // The pane lock ends with the read, before the copy is
+                // dispatched: the write resolves through the runtime and
+                // comes back as a toast, so nothing downstream needs the
+                // render lock, and nothing should be holding it.
+                let text = self.pane_by_id(pane_id).and_then(|pane| {
+                    let state = pane.terminal.lock().ok()?;
+                    let text = state.visible_text();
+                    (!text.is_empty()).then_some(text)
+                });
+                if let Some(text) = text {
+                    return self.update(Message::CopyToClipboard(text));
+                }
+            }
             TerminalMessage::TerminalClearScrollback(pane_id) => {
                 self.overlay = None;
                 if let Some(pane) = self.pane_by_id(pane_id)
