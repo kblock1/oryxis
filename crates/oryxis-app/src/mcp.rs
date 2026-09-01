@@ -178,6 +178,65 @@ pub(crate) fn mcp_config_json_wsl(token: &str, vault_pw: Option<&str>) -> String
     serde_json::to_string_pretty(&root).unwrap_or_else(|_| String::from("{}"))
 }
 
+/// Cap on the token's bullet run, mirroring the token row so both
+/// spellings of the same value line up.
+const TOKEN_MASK_CAP: usize = 48;
+
+/// Fixed bullet run for the embedded vault password. Fixed rather than
+/// proportional because it is the user's master password: the row above
+/// never shows it at all, and its length is not ours to publish.
+const VAULT_PW_MASK_WIDTH: usize = 12;
+
+/// Bullet run of `n` characters, the on-screen stand-in for a secret.
+pub(crate) fn secret_mask(n: usize) -> String {
+    "\u{2022}".repeat(n)
+}
+
+/// Mask for the MCP token, capped so a long value can't run the row off
+/// the panel.
+pub(crate) fn token_mask(token: &str) -> String {
+    secret_mask(token.chars().count().min(TOKEN_MASK_CAP))
+}
+
+/// The snippet AS RENDERED in the setup panel: the same generators the
+/// Copy and Install paths use, fed masked values while the panel is
+/// hidden. Masking the token on its own row and then printing it in
+/// full three lines below is a mask in name only, and the embedded
+/// vault password had no reveal affordance at all. Copy and Install
+/// rebuild from state, so what travels is always the real value.
+///
+/// Masking the INPUTS rather than the finished string is what keeps
+/// this correct for both shapes at once, the native `env` block and the
+/// WSL `set VAR=...&&` argument, with no second escaping opinion: a
+/// password carrying `"` or `\` is escaped by serde on the way out, so
+/// a search-and-replace over the serialized JSON would silently miss it.
+pub(crate) fn mcp_config_json_display(
+    token: &str,
+    vault_pw: Option<&str>,
+    wsl: bool,
+    revealed: bool,
+) -> String {
+    // An unset token stays unset: bullets would fabricate an `env` block
+    // for a server the user is deliberately running without auth.
+    let token_shown = if revealed || token.is_empty() {
+        token.to_string()
+    } else {
+        token_mask(token)
+    };
+    let pw_shown = vault_pw.map(|pw| {
+        if revealed {
+            pw.to_string()
+        } else {
+            secret_mask(VAULT_PW_MASK_WIDTH)
+        }
+    });
+    if wsl {
+        mcp_config_json_wsl(&token_shown, pw_shown.as_deref())
+    } else {
+        mcp_config_json(&token_shown, pw_shown.as_deref())
+    }
+}
+
 /// Home directory resolved the way external clients see it.
 fn home_dir_for_config() -> Result<std::path::PathBuf, String> {
     let home_str = if cfg!(target_os = "windows") {
@@ -550,8 +609,8 @@ impl crate::app::Oryxis {
 #[cfg(test)]
 mod tests {
     use super::{
-        cmd_escape, merge_oryxis_entry, oryxis_mcp_entry, oryxis_mcp_entry_wsl,
-        strip_oryxis_entry,
+        cmd_escape, mcp_config_json_display, merge_oryxis_entry, oryxis_mcp_entry,
+        oryxis_mcp_entry_wsl, strip_oryxis_entry,
     };
 
     const WSL: &str = "/mnt/c/Users/wilso/.oryxis/bin/oryxis-mcp.exe";
@@ -605,6 +664,34 @@ mod tests {
         assert_eq!(v["command"], "/mnt/c/Windows/System32/cmd.exe");
         let args = v["args"].as_array().expect("args array");
         assert_eq!(args[1], format!("set ORYXIS_VAULT_PASSWORD=hunter2&& {WIN}"));
+    }
+
+    // The rendered snippet is what a bystander reads off the screen, so
+    // a masked panel must not spell out the token nor the embedded
+    // master password, in either shape. Structural, because the two
+    // spellings of the same value sit three lines apart and a future
+    // edit to one is easy to make without the other.
+    #[test]
+    fn masked_snippet_carries_neither_secret() {
+        const TOKEN: &str = "6f1c0b9a4d3e2f108c7b6a5948372615";
+        const PW: &str = "correct horse battery staple";
+        for wsl in [false, true] {
+            let masked = mcp_config_json_display(TOKEN, Some(PW), wsl, false);
+            assert!(!masked.contains(TOKEN), "token leaked while masked (wsl={wsl})");
+            assert!(!masked.contains(PW), "vault password leaked while masked (wsl={wsl})");
+            let revealed = mcp_config_json_display(TOKEN, Some(PW), wsl, true);
+            assert!(revealed.contains(TOKEN), "token missing when revealed (wsl={wsl})");
+            assert!(revealed.contains(PW), "vault password missing when revealed (wsl={wsl})");
+        }
+    }
+
+    // Masking must not invent auth for a server running without it: an
+    // empty token keeps producing the env-free entry.
+    #[test]
+    fn masked_snippet_keeps_an_unset_token_unset() {
+        let masked = mcp_config_json_display("", None, false, false);
+        assert!(!masked.contains("ORYXIS_MCP_TOKEN"));
+        assert!(!masked.contains('\u{2022}'));
     }
 
     #[test]

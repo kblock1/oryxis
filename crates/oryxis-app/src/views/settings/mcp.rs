@@ -5,7 +5,7 @@
 use super::*;
 use iced::widget::column;
 
-use crate::mcp::{mcp_config_json, mcp_config_json_wsl};
+use crate::mcp::{mcp_config_json_display, token_mask};
 
 impl Oryxis {
     /// Standalone MCP Server settings section. Was nested inside the
@@ -134,11 +134,12 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
     // targets, handled in dispatch) between the native client and a
     // Claude Code / Cursor running inside WSL. The toggle that flips it
     // is Windows-only, so on other platforms this stays false.
-    let json_text = if target_wsl {
-        mcp_config_json_wsl(token, vault_pw.as_deref())
-    } else {
-        mcp_config_json(token, vault_pw.as_deref())
-    };
+    // The snippet obeys the SAME visibility the token row does: it
+    // spells out the token and, when embedded, the vault password, so
+    // revealing one and hiding the other would be a mask in name only.
+    // Copy / Install rebuild the JSON from state and always carry the
+    // real values.
+    let json_text = mcp_config_json_display(token, vault_pw.as_deref(), target_wsl, token_visible);
     let path_hint: &str = if target_wsl {
         "~/.claude.json (WSL)"
     } else {
@@ -209,16 +210,16 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
     });
 
     // Token row: shows the active MCP token (masked by default), with
-    // show/hide, copy, and regenerate affordances. The token also
-    // ends up inside the `env` block of the JSON snippet rendered
-    // below, this row is the place where the user actually sees it
-    // and rotates it.
+    // show/hide, copy, and regenerate affordances. Show/Hide governs
+    // every secret on the panel, this row and the snippet below, which
+    // is where the token and the opt-in vault password are spelled out
+    // again.
     let token_display: String = if token.is_empty() {
         crate::i18n::t("mcp_token_unset").to_string()
     } else if token_visible {
         token.to_string()
     } else {
-        "\u{2022}".repeat(token.chars().count().min(48))
+        token_mask(token)
     };
     let token_color = if token.is_empty() {
         OryxisColors::t().warning
@@ -341,7 +342,11 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
         })
         .into(),
     ];
-    if !token.is_empty() {
+    // The reveal is offered whenever the panel holds a secret at all: a
+    // vault whose auth token is unset can still carry an embedded master
+    // password in the snippet, and a masked value with no way back would
+    // be worse than showing it.
+    if !token.is_empty() || vault_pw.is_some() {
         token_items.push(Space::new().width(8).into());
         token_items.push(app.settings_nav_slot(
             crate::keynav::RowAction::activate(Message::Mcp(McpMessage::ToggleMcpTokenVisibility)),
@@ -352,6 +357,8 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
                 Message::Mcp(McpMessage::ToggleMcpTokenVisibility),
             ),
         ));
+    }
+    if !token.is_empty() {
         token_items.push(Space::new().width(6).into());
         token_items.push(app.settings_nav_slot(
             crate::keynav::RowAction::activate(Message::Mcp(McpMessage::CopyMcpToken)),
