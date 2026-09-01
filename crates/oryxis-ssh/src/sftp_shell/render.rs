@@ -235,7 +235,7 @@ pub fn render_listing(entries: &[SftpEntry], opts: &LsOpts, now: i64, cols: u16)
     }
 
     if opts.long {
-        return long_listing(&visible, opts.human, now);
+        return long_listing(&visible, opts, now);
     }
     if opts.one_per_line {
         let mut out = String::new();
@@ -248,7 +248,8 @@ pub fn render_listing(entries: &[SftpEntry], opts: &LsOpts, now: i64, cols: u16)
     columnize(&visible, cols)
 }
 
-fn long_listing(entries: &[&SftpEntry], human: bool, now: i64) -> String {
+fn long_listing(entries: &[&SftpEntry], opts: &LsOpts, now: i64) -> String {
+    let human = opts.human;
     // Widths are measured over the rows about to be printed, not fixed,
     // so a listing of small files does not carry a column of padding
     // sized for a file that is not there.
@@ -262,13 +263,17 @@ fn long_listing(entries: &[&SftpEntry], human: bool, now: i64) -> String {
             }
         })
         .collect();
+    // The NAME when the listing resolved one and `-n` did not ask for
+    // the number, the id otherwise, and `?` when the server sent
+    // neither. A listing that invented an owner would be worse than one
+    // that admits it does not know.
     let owner_strings: Vec<String> = entries
         .iter()
-        .map(|e| e.uid.map(|u| u.to_string()).unwrap_or_else(|| "?".into()))
+        .map(|e| identity(opts.numeric, e.owner.as_deref(), e.uid))
         .collect();
     let group_strings: Vec<String> = entries
         .iter()
-        .map(|e| e.gid.map(|g| g.to_string()).unwrap_or_else(|| "?".into()))
+        .map(|e| identity(opts.numeric, e.group.as_deref(), e.gid))
         .collect();
 
     let size_w = size_strings.iter().map(|s| s.len()).max().unwrap_or(0);
@@ -289,6 +294,17 @@ fn long_listing(entries: &[&SftpEntry], human: bool, now: i64) -> String {
         out.push_str(CRLF);
     }
     out
+}
+
+/// One identity column: a name, an id, or an admission that the server
+/// said neither.
+fn identity(numeric: bool, name: Option<&str>, id: Option<u32>) -> String {
+    match (numeric, name, id) {
+        (false, Some(name), _) => name.to_string(),
+        (_, _, Some(id)) => id.to_string(),
+        (_, Some(name), None) => name.to_string(),
+        (_, None, None) => "?".to_string(),
+    }
 }
 
 /// Lay names out in columns that fit `cols`, the way a bare `ls` does.
@@ -451,20 +467,96 @@ fn truncate_to(s: &str, width: usize) -> String {
     out
 }
 
+/// The `df` table, in `sftp(1)`'s columns.
+///
+/// The numbers are `df`'s, which means USED is total minus free while the
+/// percentage is measured against used plus AVAILABLE. The gap between
+/// the two is the filesystem's reserve, and the reason both readings
+/// exist: a disk can be 100% full for an ordinary user with blocks still
+/// free for root.
+pub fn df_table(info: &crate::FsInfo, human: bool, inodes: bool) -> String {
+    let (header, cells) = if inodes {
+        (
+            ["Inodes", "Used", "Avail", "(root)", "%Capacity"],
+            [
+                info.inodes.to_string(),
+                info.inodes.saturating_sub(info.inodes_free).to_string(),
+                info.inodes_avail.to_string(),
+                info.inodes_free.to_string(),
+                format!("{}%", percent(info.inodes, info.inodes_free, info.inodes_avail)),
+            ],
+        )
+    } else {
+        // Without `-h` the unit is 1 KiB, which is `df`'s default and
+        // what the unqualified column heading means.
+        let scale = |bytes: u64| {
+            if human {
+                human_size(bytes)
+            } else {
+                (bytes / 1024).to_string()
+            }
+        };
+        (
+            ["Size", "Used", "Avail", "(root)", "%Capacity"],
+            [
+                scale(info.total_bytes()),
+                scale(info.used_bytes()),
+                scale(info.available_bytes()),
+                scale(info.blocks_free.saturating_mul(info.fragment_size)),
+                format!("{}%", info.capacity_percent()),
+            ],
+        )
+    };
+
+    let mut out = String::new();
+    let widths: Vec<usize> = header
+        .iter()
+        .zip(cells.iter())
+        .map(|(h, c)| h.len().max(c.len()))
+        .collect();
+    for (i, h) in header.iter().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        out.push_str(&format!("{h:>width$}", width = widths[i]));
+    }
+    out.push_str(CRLF);
+    for (i, c) in cells.iter().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        out.push_str(&format!("{c:>width$}", width = widths[i]));
+    }
+    out.push_str(CRLF);
+    out
+}
+
+/// The inode twin of [`crate::FsInfo::capacity_percent`], which cannot
+/// live on the struct because the two share no field names.
+fn percent(total: u64, free: u64, avail: u64) -> u64 {
+    let used = total.saturating_sub(free);
+    let usable = used.saturating_add(avail);
+    if usable == 0 {
+        return 0;
+    }
+    (used.saturating_mul(100)).div_ceil(usable).min(100)
+}
+
 /// The `help` table. Ordered by what a person reaches for, not
 /// alphabetically: navigation, then listing, then transfer, then the
 /// rest.
 pub fn help_text() -> String {
     const ROWS: &[(&str, &str)] = &[
         (
-            "cd [path]",
+            "cd, chdir [path]",
             "change the remote directory (no argument: home)",
         ),
-        ("lcd [path]", "change the local directory"),
+        ("lcd, lchdir [path]", "change the local directory"),
         ("pwd", "print the remote directory"),
         ("lpwd", "print the local directory"),
-        ("ls [-1afhlnrSt] [path]", "list the remote directory"),
+        ("ls, dir [-1afhlnrSt] [path]", "list the remote directory"),
         ("lls [-1afhlnrSt] [path]", "list the local directory"),
+        ("df [-hi] [path]", "free space on the remote filesystem"),
         (
             "get [-afpr] remote [local]",
             "download; remote may be a glob",
@@ -474,16 +566,29 @@ pub fn help_text() -> String {
         ("put [-afpr] local [remote]", "upload; local may be a glob"),
         ("mput local", "upload matching files (put with a glob)"),
         ("reput local [remote]", "resume an interrupted upload"),
-        ("rm path [path ...]", "delete remote files"),
+        ("lumask mask", "mask applied to files get creates (octal)"),
+        ("rm, delete path [...]", "delete remote files"),
         ("mkdir path", "create a remote directory"),
         ("lmkdir path", "create a local directory"),
         ("rmdir path", "remove a remote directory"),
         ("rename old new", "rename a remote file"),
-        ("chmod mode path", "change remote permissions (octal)"),
+        ("copy, cp old new", "copy a remote file to another remote path"),
+        ("ln [-s] target link", "hard link, or symbolic with -s"),
+        ("symlink target link", "same as ln -s"),
+        ("chmod [-h] mode path", "change remote permissions (octal)"),
+        ("chown [-h] uid path", "change the remote owner (numeric)"),
+        ("chgrp [-h] gid path", "change the remote group (numeric)"),
         ("progress", "toggle the transfer progress meter"),
         ("version", "show the SFTP protocol version"),
         ("help, ?", "this list"),
         ("bye, quit, exit", "close the console"),
+    ];
+    const FLAGS: &[(&str, &str)] = &[
+        ("-a", "resume a partial transfer"),
+        ("-f", "flush to disk before reporting success"),
+        ("-p", "preserve permissions and modification times"),
+        ("-r", "recurse into directories"),
+        ("-h", "act on a symlink itself, not on its target"),
     ];
     let widest = ROWS.iter().map(|(cmd, _)| cmd.len()).max().unwrap_or(0);
     let mut out = String::new();
@@ -492,9 +597,22 @@ pub fn help_text() -> String {
         out.push_str(CRLF);
     }
     out.push_str(CRLF);
-    out.push_str("Owner and group are shown numerically: the server's own");
+    out.push_str("Flags:");
     out.push_str(CRLF);
-    out.push_str("formatted listing is not available through this client.");
+    for (flag, description) in FLAGS {
+        out.push_str(&format!("{flag:<widest$}  {description}"));
+        out.push_str(CRLF);
+    }
+    out.push_str(CRLF);
+    out.push_str("ls -l shows the owner by name when the server resolves one,");
+    out.push_str(CRLF);
+    out.push_str("and ls -ln always shows the numbers. lls -l is numeric: the");
+    out.push_str(CRLF);
+    out.push_str("names came from the server, and there is none for the local");
+    out.push_str(CRLF);
+    out.push_str("side. chown and chgrp take numeric ids only, because SFTP");
+    out.push_str(CRLF);
+    out.push_str("carries no way to ask what a name resolves to.");
     out.push_str(CRLF);
     out
 }
@@ -513,10 +631,87 @@ mod tests {
             permissions: Some(mode),
             uid: Some(1000),
             gid: Some(1000),
+            owner: None,
+            group: None,
         }
     }
 
     // --- sizes ------------------------------------------------------
+
+    fn fs(total_frags: u64, free: u64, avail: u64) -> crate::FsInfo {
+        crate::FsInfo {
+            fragment_size: 1024,
+            blocks: total_frags,
+            blocks_free: free,
+            blocks_avail: avail,
+            inodes: 1000,
+            inodes_free: 400,
+            inodes_avail: 400,
+        }
+    }
+
+    /// The two readings `df` keeps apart, and the reason both columns
+    /// exist: USED counts against free, the PERCENTAGE counts against
+    /// available, and the gap is the filesystem's reserve. A version that
+    /// used one number for both reports a full disk as 90% full.
+    #[test]
+    fn df_measures_used_against_free_and_capacity_against_available() {
+        // 100 KiB total, 10 KiB free, none of it available: the reserve
+        // is the whole remainder, so it is 100% full for a user while 10
+        // KiB is still free for root.
+        let info = fs(100, 10, 0);
+        assert_eq!(info.total_bytes(), 100 * 1024);
+        assert_eq!(info.used_bytes(), 90 * 1024);
+        assert_eq!(info.available_bytes(), 0);
+        assert_eq!(info.capacity_percent(), 100);
+    }
+
+    #[test]
+    fn df_of_an_empty_filesystem_is_zero_percent() {
+        let info = fs(100, 100, 100);
+        assert_eq!(info.used_bytes(), 0);
+        assert_eq!(info.capacity_percent(), 0);
+    }
+
+    /// A filesystem the server reports as having no blocks at all (a
+    /// pseudo-filesystem, or a server answering with zeroes) must not
+    /// divide by zero.
+    #[test]
+    fn df_of_nothing_does_not_divide_by_zero() {
+        let info = fs(0, 0, 0);
+        assert_eq!(info.capacity_percent(), 0);
+        assert!(df_table(&info, false, false).contains("0%"));
+    }
+
+    #[test]
+    fn df_columns_line_up_and_answer_both_units() {
+        let info = fs(2048, 1024, 1000);
+        let plain = df_table(&info, false, false);
+        let mut lines = plain.lines();
+        let header = lines.next().unwrap();
+        let cells = lines.next().unwrap();
+        assert_eq!(header.len(), cells.len(), "columns drifted:\n{plain}");
+        assert!(header.contains("Size") && header.contains("%Capacity"));
+        // Without -h the unit is 1 KiB, which is `df`'s own default.
+        assert!(cells.contains("2048"), "wrong unit in:\n{plain}");
+        assert!(df_table(&info, true, false).contains("2.0M"));
+        assert!(df_table(&info, false, true).contains("Inodes"));
+    }
+
+    /// Every command the parser knows is described in `help`, because a
+    /// console whose help is a subset of what it does teaches the user
+    /// that the help cannot be trusted.
+    #[test]
+    fn help_describes_every_verb() {
+        let help = help_text();
+        for row in crate::sftp_shell::parser::VERBS {
+            assert!(
+                help.contains(row.name),
+                "`{}` is a command but help never mentions it",
+                row.name
+            );
+        }
+    }
 
     #[test]
     fn human_sizes_follow_ls_h() {
@@ -974,12 +1169,32 @@ mod tests {
         assert!(help.ends_with(CRLF));
     }
 
-    /// The `longname` limitation is documented where a user will hit it,
-    /// which is the point of putting it in `help` rather than in a
-    /// comment nobody reads.
+    /// Where the console shows a name and where it cannot is documented
+    /// where a user will hit it, which is the point of putting it in
+    /// `help` rather than in a comment nobody reads.
     #[test]
-    fn help_admits_the_numeric_owner_limitation() {
-        assert!(help_text().contains("numerically"));
+    fn help_says_where_an_owner_is_a_name_and_where_it_is_a_number() {
+        let help = help_text();
+        assert!(help.contains("ls -ln"), "the numeric escape is not named");
+        assert!(help.contains("lls -l"), "the local side is not covered");
+        assert!(
+            help.contains("numeric ids only"),
+            "the chown limit is not stated"
+        );
+    }
+
+    /// The owner column prefers a name, falls back to the id, and admits
+    /// it when the server sent neither. `-n` asks for the number even
+    /// when a name is in hand.
+    #[test]
+    fn the_owner_column_prefers_a_name_unless_numbers_were_asked_for() {
+        assert_eq!(identity(false, Some("wilson"), Some(1000)), "wilson");
+        assert_eq!(identity(true, Some("wilson"), Some(1000)), "1000");
+        assert_eq!(identity(false, None, Some(1000)), "1000");
+        // A server that named an owner without an id is still answering
+        // the question, so `-n` takes the name rather than a `?`.
+        assert_eq!(identity(true, Some("wilson"), None), "wilson");
+        assert_eq!(identity(false, None, None), "?");
     }
 
     /// A file name is remote input on its way to a terminal that acts on
@@ -1010,6 +1225,8 @@ mod tests {
             permissions: None,
             uid: None,
             gid: None,
+            owner: None,
+            group: None,
         };
         for opts in [
             LsOpts { long: true, ..Default::default() },

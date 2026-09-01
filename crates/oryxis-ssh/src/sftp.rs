@@ -29,6 +29,13 @@ pub struct SftpEntry {
     /// otherwise. Drives the optional Owner column in the UI.
     pub uid: Option<u32>,
     pub gid: Option<u32>,
+    /// Owner and group as NAMES. The protocol carries no field for
+    /// either, only the numeric ids; these come from the human-readable
+    /// line the server also sends, and only
+    /// [`SftpClient::list_dir_long`] asks for it. Every other listing
+    /// leaves them `None` and the ids stand.
+    pub owner: Option<String>,
+    pub group: Option<String>,
 }
 
 /// True when a name that came from the SFTP SERVER is a single plain
@@ -80,6 +87,195 @@ pub struct UploadOptions {
     /// real name is only ever a finished file. Costs a rename the server
     /// may forbid, which is why it is a choice and not the default.
     pub temp_name: bool,
+    /// Ask the server to flush the file to its disk before answering
+    /// (`fsync@openssh.com`). Off by default because it costs a round
+    /// trip and a disk sync on every upload, and the callers that want
+    /// the guarantee are the ones that say so.
+    pub fsync: bool,
+}
+
+/// Pull the owner and group out of an SFTP v3 `longname` line.
+///
+/// The line is explicitly unspecified by the protocol ("human readable"),
+/// so this is a READING and it says no when the text is not what it
+/// expects. OpenSSH, and every server that copied it, formats `ls -l`:
+///
+/// ```text
+/// -rw-r--r--    1 wilson   staff       12 Sep  1 20:51 report.txt
+/// ```
+///
+/// Two guards decide whether to believe it. The first field has to be a
+/// mode string of the right shape and length, which is what tells an
+/// `ls -l` line from any other format a server might invent; and the
+/// second has to be a link count, i.e. a number. Only then are fields
+/// three and four the owner and the group. Anything else returns `None`
+/// and the caller shows the numeric ids, because a bad split would put
+/// arbitrary remote text in a column the user reads as an identity.
+fn parse_longname_owner(longname: &str) -> (Option<String>, Option<String>) {
+    let mut fields = longname.split_whitespace();
+    let Some(mode) = fields.next() else {
+        return (None, None);
+    };
+    // `drwxr-xr-x`, plus the optional ACL marker `ls` appends.
+    let body = mode.trim_end_matches(['+', '.', '@']);
+    if body.len() != 10 || !body.is_char_boundary(1) {
+        return (None, None);
+    }
+    if !body[1..].chars().all(|c| "rwxstST-".contains(c)) {
+        return (None, None);
+    }
+    let Some(links) = fields.next() else {
+        return (None, None);
+    };
+    if links.parse::<u64>().is_err() {
+        return (None, None);
+    }
+    let owner = fields.next().map(str::to_string);
+    let group = fields.next().map(str::to_string);
+    // A line that ran out before both were read is not the format this
+    // expects, so neither half is trusted.
+    match (owner, group) {
+        (Some(o), Some(g)) => (Some(o), Some(g)),
+        _ => (None, None),
+    }
+}
+
+/// What a SETSTAT should change. Every field `None` = leave it alone,
+/// which is the protocol's own model rather than a convenience: an
+/// attribute block travels with a flag word saying which fields are
+/// present, so "unchanged" and "set to zero" are genuinely different
+/// messages.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AttrUpdate {
+    pub permissions: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+    /// Unix seconds. The pair travels together because the protocol's
+    /// ACMODTIME flag covers both; setting one alone means reading the
+    /// other first.
+    pub atime: Option<u32>,
+    pub mtime: Option<u32>,
+}
+
+impl AttrUpdate {
+    /// Drop a half-filled pair.
+    ///
+    /// Two fields on the wire share one flag: uid with gid, atime with
+    /// mtime. Announcing the flag means writing BOTH words, so a request
+    /// carrying only one of them sends a zero for the other, and a zero
+    /// is not "unchanged": it is uid 0 and it is 1970. The crate's own
+    /// serializer does exactly that, which is why this runs on both
+    /// paths rather than only on the one encoded here.
+    ///
+    /// Dropping the pair is the conservative half of the answer. The
+    /// other half belongs to the caller, which knows whether it can fill
+    /// the missing value in and should say so rather than quietly
+    /// changing nothing.
+    fn paired(mut self) -> Self {
+        if self.uid.is_none() || self.gid.is_none() {
+            self.uid = None;
+            self.gid = None;
+        }
+        if self.atime.is_none() || self.mtime.is_none() {
+            self.atime = None;
+            self.mtime = None;
+        }
+        self
+    }
+
+    /// Whether anything at all would travel. A request that announces no
+    /// flags is a round trip that changes nothing.
+    pub fn is_empty(&self) -> bool {
+        let p = self.paired();
+        p.permissions.is_none() && p.uid.is_none() && p.atime.is_none()
+    }
+}
+
+/// Encode an [`AttrUpdate`] as an SFTP v3 ATTRS block.
+///
+/// Hand-written because the only consumer is an EXTENDED request, whose
+/// payload the crate serializes as opaque bytes. The field ORDER is the
+/// specification's and is not free to change: a reader takes the flags
+/// and then expects exactly these words, in this sequence.
+fn encode_attrs_v3(update: &AttrUpdate) -> Vec<u8> {
+    const SSH_FILEXFER_ATTR_UIDGID: u32 = 0x0000_0002;
+    const SSH_FILEXFER_ATTR_PERMISSIONS: u32 = 0x0000_0004;
+    const SSH_FILEXFER_ATTR_ACMODTIME: u32 = 0x0000_0008;
+
+    let update = update.paired();
+    let mut flags = 0u32;
+    if update.uid.is_some() {
+        flags |= SSH_FILEXFER_ATTR_UIDGID;
+    }
+    if update.permissions.is_some() {
+        flags |= SSH_FILEXFER_ATTR_PERMISSIONS;
+    }
+    if update.atime.is_some() {
+        flags |= SSH_FILEXFER_ATTR_ACMODTIME;
+    }
+    let mut out = Vec::with_capacity(24);
+    out.extend_from_slice(&flags.to_be_bytes());
+    // SIZE is never sent: this is an attribute change, and a size in an
+    // ATTRS block is a TRUNCATE.
+    if flags & SSH_FILEXFER_ATTR_UIDGID != 0 {
+        out.extend_from_slice(&update.uid.unwrap_or(0).to_be_bytes());
+        out.extend_from_slice(&update.gid.unwrap_or(0).to_be_bytes());
+    }
+    if flags & SSH_FILEXFER_ATTR_PERMISSIONS != 0 {
+        out.extend_from_slice(&update.permissions.unwrap_or(0).to_be_bytes());
+    }
+    if flags & SSH_FILEXFER_ATTR_ACMODTIME != 0 {
+        out.extend_from_slice(&update.atime.unwrap_or(0).to_be_bytes());
+        out.extend_from_slice(&update.mtime.unwrap_or(0).to_be_bytes());
+    }
+    out
+}
+
+/// Free space, as `statvfs@openssh.com` reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FsInfo {
+    /// The unit `blocks` and friends are counted in.
+    pub fragment_size: u64,
+    pub blocks: u64,
+    pub blocks_free: u64,
+    /// What an unprivileged user may actually use, which is the number a
+    /// `df` should show: the difference from `blocks_free` is the
+    /// reserve, and reporting the reserve as available is what makes a
+    /// disk look emptier than it is.
+    pub blocks_avail: u64,
+    pub inodes: u64,
+    pub inodes_free: u64,
+    pub inodes_avail: u64,
+}
+
+impl FsInfo {
+    pub fn total_bytes(&self) -> u64 {
+        self.blocks.saturating_mul(self.fragment_size)
+    }
+
+    pub fn available_bytes(&self) -> u64 {
+        self.blocks_avail.saturating_mul(self.fragment_size)
+    }
+
+    /// Space in use, which is TOTAL minus FREE and not total minus
+    /// available: the reserve is used by nobody but is not free either,
+    /// and counting it as used is the same mistake `df` itself avoids.
+    pub fn used_bytes(&self) -> u64 {
+        self.total_bytes()
+            .saturating_sub(self.blocks_free.saturating_mul(self.fragment_size))
+    }
+
+    /// Percent of the usable space taken, the way `df` computes it: the
+    /// denominator is used plus AVAILABLE, so a full-for-you filesystem
+    /// reads 100% even with the reserve untouched.
+    pub fn capacity_percent(&self) -> u64 {
+        let used = self.used_bytes();
+        let usable = used.saturating_add(self.available_bytes());
+        if usable == 0 {
+            return 0;
+        }
+        (used.saturating_mul(100)).div_ceil(usable).min(100)
+    }
 }
 
 /// Per-path stat snapshot used by the Properties dialog.
@@ -197,8 +393,96 @@ impl SftpClient {
                     permissions: metadata.permissions,
                     uid: metadata.uid,
                     gid: metadata.gid,
+                    owner: None,
+                    group: None,
                 });
             }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// List a directory, keeping the owner and group NAMES the server
+    /// resolved.
+    ///
+    /// A separate call rather than a widening of [`Self::list_dir`],
+    /// because it costs a channel and a different code path to answer a
+    /// question only a long-format listing asks. The file browser shows
+    /// names in columns and never needs the owner string; making every
+    /// listing in the app pay for it would be the wrong trade.
+    ///
+    /// The protocol has no field for either name. SFTP v3 sends a second,
+    /// HUMAN-READABLE line per entry (`longname`) which OpenSSH's server
+    /// formats like `ls -l`, names already resolved, and the high-level
+    /// session in the crate drops it before a caller can see it. The raw
+    /// session does not, which is why this reaches for one.
+    ///
+    /// Because that line is explicitly unspecified, what comes back is
+    /// TRUSTED ONLY WHEN IT LOOKS RIGHT: [`parse_longname_owner`] refuses
+    /// anything that is not shaped like the listing it expects, and the
+    /// caller falls back to the numeric ids. A wrong split would put
+    /// arbitrary text in the owner column, which is worse than the number
+    /// it replaced.
+    pub async fn list_dir_long(&self, path: &str) -> Result<Vec<SftpEntry>, SshError> {
+        let raw = self.open_raw_streaming().await?;
+        let label = format!("read_dir_long({path})");
+        self.with_op_timeout(&label, async {
+            let handle = raw
+                .opendir(path)
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp opendir({path}): {e}")))?
+                .handle;
+            let mut out = Vec::new();
+            // `readdir` answers a page at a time and reports the END as a
+            // status, which the crate surfaces as an error. Only EOF ends
+            // the loop: treating every error as the end would turn a
+            // permission failure or a dead link into a directory that
+            // simply looks shorter than it is, with nothing said.
+            loop {
+                let name = match raw.readdir(handle.clone()).await {
+                    Ok(name) => name,
+                    Err(russh_sftp::client::error::Error::Status(s))
+                        if s.status_code == StatusCode::Eof =>
+                    {
+                        break;
+                    }
+                    Err(e) => {
+                        let _ = raw.close(handle).await;
+                        return Err(SshError::Channel(format!("sftp read_dir({path}): {e}")));
+                    }
+                };
+                // The protocol says a server with nothing left MUST send
+                // the EOF status, so an empty page is out of spec. Ending
+                // on it rather than asking again is the safe reading: a
+                // server that answered empty forever would hang the
+                // console on a directory listing.
+                if name.files.is_empty() {
+                    break;
+                }
+                for file in name.files {
+                    if file.filename == "." || file.filename == ".." {
+                        continue;
+                    }
+                    let (owner, group) = parse_longname_owner(&file.longname);
+                    out.push(SftpEntry {
+                        name: file.filename,
+                        is_dir: file.attrs.is_dir(),
+                        is_symlink: file.attrs.is_symlink(),
+                        size: file.attrs.size.unwrap_or(0),
+                        mtime: file.attrs.mtime,
+                        permissions: file.attrs.permissions,
+                        uid: file.attrs.uid,
+                        gid: file.attrs.gid,
+                        // The crate also parses `user` / `group` out of
+                        // the v4+ attribute fields; prefer those when a
+                        // server sends them, since they are the answer
+                        // rather than a reading of one.
+                        owner: file.attrs.user.or(owner),
+                        group: file.attrs.group.or(group),
+                    });
+                }
+            }
+            let _ = raw.close(handle).await;
             Ok(out)
         })
         .await
@@ -665,6 +949,7 @@ impl SftpClient {
             progress,
             resume,
             temp_name,
+            fsync,
         } = opts;
         let label = format!("upload({remote})");
         let size = tokio::fs::metadata(local)
@@ -817,6 +1102,19 @@ impl SftpClient {
             },
         )
         .await;
+        // `-f`: ask the server to put the bytes on its disk before it
+        // answers. It has to happen BEFORE the close, because the
+        // extension names an open handle, and it is folded into the
+        // result because a durability guarantee that failed quietly is
+        // worse than one nobody asked for.
+        let synced = if fsync {
+            raw.fsync(handle.clone())
+                .await
+                .map(|_| ())
+                .map_err(|e| SshError::Channel(format!("sftp fsync({target}): {e}")))
+        } else {
+            Ok(())
+        };
         // Close flushes the handle server-side; fold its error in so a
         // failed close after a clean copy still surfaces.
         let close = raw
@@ -824,7 +1122,7 @@ impl SftpClient {
             .await
             .map(|_| ())
             .map_err(|e| SshError::Channel(format!("sftp close({target}): {e}")));
-        let result = result.and(close);
+        let result = result.and(synced).and(close);
         if let Err(e) = result {
             self.discard_upload_partial(
                 &target,
@@ -1167,6 +1465,171 @@ impl SftpClient {
         .await
     }
 
+    /// Apply `update` to a remote path.
+    ///
+    /// Every field is `Option` and only the populated ones travel: the
+    /// protocol's flag-driven serialization skips unset fields, so a
+    /// change of owner leaves the mode and the times alone. `Default` is
+    /// the wrong base for the same reason [`Self::chmod`] says, it
+    /// pre-fills size/uid/permissions and would nuke the rest.
+    ///
+    /// `follow` false operates on a SYMLINK ITSELF rather than on what it
+    /// points at, which plain SFTP v3 cannot express: there is a `LSTAT`
+    /// but no `LSETSTAT`. It rides the OpenSSH extension, so a server
+    /// without it reports rather than silently changing the wrong file,
+    /// which is the whole reason the flag exists.
+    pub async fn set_attrs(
+        &self,
+        path: &str,
+        update: AttrUpdate,
+        follow: bool,
+    ) -> Result<(), SshError> {
+        // The pair rule applies to the high-level path too: the crate's
+        // serializer announces UIDGID when EITHER id is set and then
+        // writes a zero for the missing one, which is uid 0, not
+        // "unchanged".
+        let update = update.paired();
+        if update.is_empty() {
+            return Ok(());
+        }
+        let mut attrs = FileAttributes::empty();
+        attrs.permissions = update.permissions;
+        attrs.uid = update.uid;
+        attrs.gid = update.gid;
+        attrs.atime = update.atime;
+        attrs.mtime = update.mtime;
+        if follow {
+            let label = format!("setstat({path})");
+            return self
+                .with_op_timeout(&label, async {
+                    let s = self.inner.lock().await;
+                    s.set_metadata(path.to_string(), attrs)
+                        .await
+                        .map_err(|e| SshError::Channel(format!("sftp setstat({path}): {e}")))
+                })
+                .await;
+        }
+        let raw = self.open_raw_streaming().await?;
+        // `lsetstat@openssh.com` payload: `string path; ATTRS attrs`,
+        // where ATTRS is SFTP v3's flag-prefixed attribute block.
+        let mut data = Vec::with_capacity(8 + path.len() + 24);
+        data.extend_from_slice(&(path.len() as u32).to_be_bytes());
+        data.extend_from_slice(path.as_bytes());
+        data.extend_from_slice(&encode_attrs_v3(&update));
+        let label = format!("lsetstat({path})");
+        self.with_op_timeout(&label, async {
+            match raw.extended("lsetstat@openssh.com", data).await {
+                Ok(Packet::Status(s)) if s.status_code == StatusCode::Ok => Ok(()),
+                Ok(Packet::Status(s)) => Err(SshError::Channel(format!(
+                    "sftp lsetstat({path}): {:?}",
+                    s.status_code
+                ))),
+                Ok(_) => Err(SshError::Channel("sftp lsetstat: unexpected reply".into())),
+                Err(e) => Err(SshError::Channel(format!("sftp lsetstat({path}): {e}"))),
+            }
+        })
+        .await
+    }
+
+    /// Free space and inode counts for the filesystem holding `path`.
+    ///
+    /// `Ok(None)` means the server does not offer
+    /// `statvfs@openssh.com`, which is a different answer from a failure
+    /// and is reported as one: there is nothing wrong, the question
+    /// cannot be asked.
+    pub async fn fs_info(&self, path: &str) -> Result<Option<FsInfo>, SshError> {
+        let label = format!("statvfs({path})");
+        self.with_op_timeout(&label, async {
+            let s = self.inner.lock().await;
+            let info = s
+                .fs_info(path.to_string())
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp statvfs({path}): {e}")))?;
+            Ok(info.map(|v| FsInfo {
+                // `blocks` counts fragments, not blocks, which is what
+                // makes `fragment_size` the multiplier: using
+                // `block_size` here overstates a filesystem whose two
+                // sizes differ.
+                fragment_size: v.fragment_size,
+                blocks: v.blocks,
+                blocks_free: v.blocks_free,
+                blocks_avail: v.blocks_avail,
+                inodes: v.inodes,
+                inodes_free: v.inodes_free,
+                inodes_avail: v.inodes_avail,
+            }))
+        })
+        .await
+    }
+
+    /// Create a symbolic link at `link` pointing to `target`.
+    ///
+    /// The argument order here is the CALLER's (`ln -s target link`), and
+    /// it is deliberately not passed straight through. OpenSSH's server
+    /// reads `SSH_FXP_SYMLINK`'s two fields in the opposite order from
+    /// the draft it implements, a swap old enough that it is now the de
+    /// facto protocol, and every client compensates. Which way round this
+    /// call goes was MEASURED against a real `sftp-server`, not read off
+    /// the specification.
+    pub async fn symlink(&self, target: &str, link: &str) -> Result<(), SshError> {
+        let label = format!("symlink({link} → {target})");
+        self.with_op_timeout(&label, async {
+            let s = self.inner.lock().await;
+            s.symlink(target.to_string(), link.to_string())
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp symlink({link} → {target}): {e}")))
+        })
+        .await
+    }
+
+    /// Read what a symbolic link points at.
+    pub async fn read_link(&self, path: &str) -> Result<String, SshError> {
+        let label = format!("readlink({path})");
+        self.with_op_timeout(&label, async {
+            let s = self.inner.lock().await;
+            s.read_link(path.to_string())
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp readlink({path}): {e}")))
+        })
+        .await
+    }
+
+    /// Create a hard link. `Ok(false)` means the server does not offer
+    /// `hardlink@openssh.com`; reported rather than emulated, because the
+    /// nearest thing to emulating a hard link is a copy, and the two are
+    /// not the same file.
+    pub async fn hardlink(&self, target: &str, link: &str) -> Result<bool, SshError> {
+        let label = format!("hardlink({link} → {target})");
+        self.with_op_timeout(&label, async {
+            let s = self.inner.lock().await;
+            s.hardlink(target.to_string(), link.to_string())
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp hardlink({link} → {target}): {e}")))
+        })
+        .await
+    }
+
+    /// Stat a remote path WITHOUT following a final symlink, so a link
+    /// reports on itself. The counterpart to [`Self::stat`].
+    pub async fn lstat(&self, path: &str) -> Result<RemoteStat, SshError> {
+        let label = format!("lstat({path})");
+        self.with_op_timeout(&label, async {
+            let s = self.inner.lock().await;
+            let meta = s
+                .symlink_metadata(path.to_string())
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp lstat({path}): {e}")))?;
+            Ok(RemoteStat {
+                size: meta.size.unwrap_or(0),
+                permissions: meta.permissions,
+                mtime: meta.mtime,
+                uid: meta.uid,
+                gid: meta.gid,
+            })
+        })
+        .await
+    }
+
     /// Stat a remote path. Returns just the data the Properties dialog
     /// needs (size, permissions, mtime, owner uid/gid). Symlinks are
     /// followed, we want the target's metadata, not the link itself.
@@ -1235,6 +1698,115 @@ impl SftpClient {
             }
         })
         .await
+    }
+
+    /// Copy a remote file to another remote path on the SAME server.
+    ///
+    /// Tries `copy-data`, the OpenSSH extension that does the work
+    /// server-side so the bytes never leave the machine. A server without
+    /// it falls back to reading and writing through this connection,
+    /// which is the same file at the end and costs twice the link: worth
+    /// doing rather than refusing, because the alternative the user has
+    /// is `get` followed by `put`, which costs exactly the same and
+    /// leaves a copy on their disk.
+    ///
+    /// Both handles must live on ONE session for the extension to be able
+    /// to name them, which is why this opens a single raw channel and
+    /// uses it for both ends.
+    pub async fn copy_file(&self, from: &str, to: &str) -> Result<(), SshError> {
+        if from == to {
+            return Err(SshError::Channel(format!(
+                "sftp copy({from}): source and destination are the same file"
+            )));
+        }
+        let raw = self.open_raw_streaming().await?;
+        let src = raw
+            .open(from, OpenFlags::READ, FileAttributes::empty())
+            .await
+            .map_err(|e| SshError::Channel(format!("sftp copy open({from}): {e}")))?
+            .handle;
+        let dst = raw
+            .open(
+                to,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
+                FileAttributes::empty(),
+            )
+            .await
+            .map_err(|e| SshError::Channel(format!("sftp copy open({to}): {e}")))?
+            .handle;
+
+        // `copy-data` payload: `string read-handle; uint64 read-offset;
+        // uint64 read-length (0 = to EOF); string write-handle; uint64
+        // write-offset`.
+        let mut data = Vec::with_capacity(8 + src.len() + dst.len() + 24);
+        data.extend_from_slice(&(src.len() as u32).to_be_bytes());
+        data.extend_from_slice(src.as_bytes());
+        data.extend_from_slice(&0u64.to_be_bytes());
+        data.extend_from_slice(&0u64.to_be_bytes());
+        data.extend_from_slice(&(dst.len() as u32).to_be_bytes());
+        data.extend_from_slice(dst.as_bytes());
+        data.extend_from_slice(&0u64.to_be_bytes());
+
+        let extended = self
+            .with_op_timeout(&format!("copy-data({from} → {to})"), async {
+                Ok(raw.extended("copy-data", data).await)
+            })
+            .await?;
+        let server_side = matches!(
+            &extended,
+            Ok(Packet::Status(s)) if s.status_code == StatusCode::Ok
+        );
+        let result = if server_side {
+            Ok(())
+        } else {
+            self.copy_through(&raw, &src, &dst, from, to).await
+        };
+        let _ = raw.close(src).await;
+        let _ = raw.close(dst).await;
+        result
+    }
+
+    /// The fallback for [`Self::copy_file`]: pull the bytes down and push
+    /// them back up, on the handles already open.
+    ///
+    /// Sequential on purpose. The windowed path exists for transfers
+    /// where latency dominates a link the user is waiting on; a copy is
+    /// already the slow answer to a question the server refused, and a
+    /// second sliding window here would double the complexity of a path
+    /// that only runs on servers old enough to lack a 2022 extension.
+    async fn copy_through(
+        &self,
+        raw: &RawSftpSession,
+        src: &str,
+        dst: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<(), SshError> {
+        const CHUNK: u32 = 255 * 1024;
+        let mut offset = 0u64;
+        loop {
+            let data = match raw.read(src.to_string(), offset, CHUNK).await {
+                Ok(d) => d.data,
+                // EOF is reported as a status, not as an empty read.
+                Err(_) => break,
+            };
+            if data.is_empty() {
+                break;
+            }
+            let len = data.len() as u64;
+            raw.write(dst.to_string(), offset, data)
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp copy write({to}): {e}")))?;
+            offset += len;
+        }
+        if offset == 0 {
+            // An empty source is a legitimate copy, but so is a read that
+            // failed on its first request. Tell them apart by asking.
+            raw.fstat(src.to_string())
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp copy read({from}): {e}")))?;
+        }
+        Ok(())
     }
 
     /// Open another independent SFTP subsystem channel on the same SSH
@@ -1970,9 +2542,197 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        pump_bytes, windowed_download_copy, windowed_relay_copy, windowed_upload_copy, SshError,
+        encode_attrs_v3, parse_longname_owner, pump_bytes, windowed_download_copy,
+        windowed_relay_copy, windowed_upload_copy, AttrUpdate, FsInfo, SshError,
     };
     use std::sync::{Arc, Mutex};
+
+    /// The line OpenSSH's server sends, and the two fields worth reading
+    /// out of it.
+    #[test]
+    fn a_longname_yields_the_owner_and_group() {
+        assert_eq!(
+            parse_longname_owner("-rw-r--r--    1 wilson   staff       12 Sep  1 20:51 a.txt"),
+            (Some("wilson".into()), Some("staff".into()))
+        );
+        assert_eq!(
+            parse_longname_owner("drwxr-xr-x 2 root root 4096 Jan  1  2024 etc"),
+            (Some("root".into()), Some("root".into()))
+        );
+    }
+
+    /// `ls` appends a marker to the mode when the file carries an ACL or
+    /// a security context, and the line is still the format this reads.
+    #[test]
+    fn a_longname_with_an_acl_marker_still_parses() {
+        assert_eq!(
+            parse_longname_owner("-rw-rw-r--+   1 alice    devs         7 Sep  1 20:51 a.txt"),
+            (Some("alice".into()), Some("devs".into()))
+        );
+    }
+
+    /// The protocol calls the line "human readable" and specifies nothing
+    /// about it, so anything that is not the expected shape is refused
+    /// and the caller falls back to the numeric ids. Believing a bad
+    /// split would put arbitrary remote text in a column the user reads
+    /// as an identity.
+    #[test]
+    fn an_unrecognized_longname_is_refused_rather_than_guessed() {
+        // Not a mode string.
+        assert_eq!(parse_longname_owner("total 48"), (None, None));
+        // A mode of the wrong length.
+        assert_eq!(
+            parse_longname_owner("-rw-r-- 1 a b 1 Sep 1 20:51 x"),
+            (None, None)
+        );
+        // Letters that are not permission bits.
+        assert_eq!(
+            parse_longname_owner("qqqqqqqqqq 1 a b 1 Sep 1 20:51 x"),
+            (None, None)
+        );
+        // A link count that is not a number.
+        assert_eq!(
+            parse_longname_owner("-rw-r--r-- x wilson staff 12 Sep 1 20:51 a"),
+            (None, None)
+        );
+        // Ran out before both halves were read: neither is trusted.
+        assert_eq!(parse_longname_owner("-rw-r--r-- 1 wilson"), (None, None));
+        assert_eq!(parse_longname_owner(""), (None, None));
+    }
+
+    /// A multi-byte first field must not be sliced mid-character.
+    #[test]
+    fn a_longname_that_is_not_ascii_does_not_panic() {
+        assert_eq!(parse_longname_owner("日本語日本語 1 a b 1 x"), (None, None));
+        assert_eq!(parse_longname_owner("日 1 a b 1 x"), (None, None));
+    }
+
+    /// The ATTRS block is read by taking the flag word and then expecting
+    /// exactly the fields it announced, in order, so the encoding is
+    /// asserted byte for byte.
+    #[test]
+    fn an_attribute_block_announces_only_what_it_carries() {
+        let mode = encode_attrs_v3(&AttrUpdate {
+            permissions: Some(0o640),
+            ..Default::default()
+        });
+        assert_eq!(mode, [0, 0, 0, 4, 0, 0, 1, 160]);
+
+        let ids = encode_attrs_v3(&AttrUpdate {
+            uid: Some(1000),
+            gid: Some(50),
+            ..Default::default()
+        });
+        assert_eq!(ids, [0, 0, 0, 2, 0, 0, 3, 232, 0, 0, 0, 50]);
+
+        // Both flags, and the order is UIDGID then PERMISSIONS whatever
+        // order the caller filled the struct in.
+        let both = encode_attrs_v3(&AttrUpdate {
+            permissions: Some(0o644),
+            uid: Some(1),
+            gid: Some(2),
+            ..Default::default()
+        });
+        assert_eq!(both[..4], [0, 0, 0, 6]);
+        assert_eq!(both.len(), 4 + 8 + 4);
+    }
+
+    /// A SIZE is never sent: in an attribute block it is a TRUNCATE, and
+    /// nothing here is asking to change a file's length.
+    #[test]
+    fn an_attribute_block_never_carries_a_size() {
+        const SSH_FILEXFER_ATTR_SIZE: u32 = 0x0000_0001;
+        for update in [
+            AttrUpdate::default(),
+            AttrUpdate {
+                permissions: Some(0o777),
+                uid: Some(0),
+                gid: Some(0),
+                atime: Some(1),
+                mtime: Some(2),
+            },
+        ] {
+            let bytes = encode_attrs_v3(&update);
+            let flags = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            assert_eq!(flags & SSH_FILEXFER_ATTR_SIZE, 0);
+        }
+    }
+
+    /// Two fields share one flag: uid with gid, atime with mtime.
+    /// Announcing the flag writes BOTH words, so half a pair sends a zero
+    /// for the other, and a zero is not "unchanged": it is uid 0, and it
+    /// is 1970.
+    #[test]
+    fn a_half_pair_is_not_announced() {
+        let half_time = encode_attrs_v3(&AttrUpdate {
+            atime: Some(1),
+            ..Default::default()
+        });
+        assert_eq!(half_time, [0, 0, 0, 0], "an unpaired time was announced");
+
+        let half_owner = encode_attrs_v3(&AttrUpdate {
+            uid: Some(1000),
+            ..Default::default()
+        });
+        assert_eq!(half_owner, [0, 0, 0, 0], "an unpaired id was announced");
+
+        // And the rest of the request survives the pair being dropped.
+        let mixed = encode_attrs_v3(&AttrUpdate {
+            permissions: Some(0o600),
+            gid: Some(50),
+            ..Default::default()
+        });
+        assert_eq!(mixed, [0, 0, 0, 4, 0, 0, 1, 128]);
+    }
+
+    /// A request that announces no flags is a round trip that changes
+    /// nothing, and the pair rule is what can empty one out.
+    #[test]
+    fn an_update_that_would_carry_nothing_knows_it() {
+        assert!(AttrUpdate::default().is_empty());
+        assert!(
+            AttrUpdate {
+                uid: Some(1000),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !AttrUpdate {
+                uid: Some(1000),
+                gid: Some(1000),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !AttrUpdate {
+                permissions: Some(0o644),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+    }
+
+    /// `df`'s two readings, which are not the same number: USED counts
+    /// against free, the percentage against AVAILABLE, and the gap is the
+    /// reserve.
+    #[test]
+    fn free_space_separates_the_reserve_from_the_available() {
+        let info = FsInfo {
+            fragment_size: 4096,
+            blocks: 1000,
+            blocks_free: 100,
+            blocks_avail: 0,
+            inodes: 0,
+            inodes_free: 0,
+            inodes_avail: 0,
+        };
+        assert_eq!(info.total_bytes(), 4_096_000);
+        assert_eq!(info.used_bytes(), 900 * 4096);
+        assert_eq!(info.available_bytes(), 0);
+        assert_eq!(info.capacity_percent(), 100);
+    }
     use std::time::Duration;
 
     /// Run the pump over an in-memory source and assert the sink received

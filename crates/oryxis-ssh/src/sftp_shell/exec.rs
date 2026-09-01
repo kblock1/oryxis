@@ -18,7 +18,7 @@ use crate::sftp::SftpClient;
 use crate::{SftpEntry, SshError};
 
 use super::glob;
-use super::parser::{Command, LsOpts, XferOpts};
+use super::parser::{Command, LsOpts, Owner, XferOpts};
 use super::render::{self, CRLF};
 
 /// How often the progress meter repaints. Fast enough to look live, slow
@@ -62,6 +62,15 @@ pub struct ShellState {
     /// Whether transfers paint a progress meter. `sftp(1)` starts with it
     /// on and `progress` toggles it.
     pub progress: bool,
+    /// The mask applied to the permissions of files `get` creates, set by
+    /// `lumask`.
+    ///
+    /// Held here rather than pushed into the PROCESS umask, which is what
+    /// `sftp(1)` does and what a console living inside a GUI application
+    /// must not do: the process umask is shared with every other thing
+    /// the app writes, and a console command has no business changing how
+    /// the vault or a log file is created.
+    pub lumask: u32,
     /// Terminal width, for the listing columns and the meter.
     pub cols: u16,
 }
@@ -73,6 +82,8 @@ impl ShellState {
             remote_home,
             local_cwd,
             progress: true,
+            // `sftp(1)`'s own default, and the shell's.
+            lumask: 0o022,
             cols: cols.max(1),
         }
     }
@@ -177,6 +188,39 @@ pub async fn run(
             let path = state.resolve_remote(&path);
             client.remove_dir(&path).await
         }
+        Command::Lumask(mask) => {
+            state.lumask = mask;
+            line(out, &format!("Local umask: {mask:03o}"));
+            Ok(())
+        }
+        Command::Df {
+            path,
+            human,
+            inodes,
+        } => df(path, human, inodes, client, state, out).await,
+        Command::Ln {
+            target,
+            link,
+            symbolic,
+        } => ln(target, link, symbolic, client, state, out).await,
+        Command::Chown {
+            id,
+            which,
+            paths,
+            follow,
+        } => chown(id, which, paths, follow, client, state, out).await,
+        Command::Copy { from, to } => {
+            let from = state.resolve_remote(&from);
+            let to = state.resolve_remote(&to);
+            // A destination that is a directory means "into it", which is
+            // what `cp` means to anyone who types it.
+            let to = if is_remote_dir(client, &to).await {
+                join_remote(&to, from.rsplit('/').next().unwrap_or(&from))
+            } else {
+                to
+            };
+            client.copy_file(&from, &to).await
+        }
         Command::Rename { from, to } => {
             let from = state.resolve_remote(&from);
             let to = state.resolve_remote(&to);
@@ -191,7 +235,11 @@ pub async fn run(
                 Err(_) => client.rename(&from, &to).await,
             }
         }
-        Command::Chmod { mode, paths } => chmod(mode, paths, client, state, out).await,
+        Command::Chmod {
+            mode,
+            paths,
+            follow,
+        } => chmod(mode, paths, follow, client, state, out).await,
     };
 
     match result {
@@ -361,8 +409,26 @@ async fn ls(
         && let Ok(stat) = client.stat(&dir).await
         && stat.permissions.is_some_and(|m| m & 0o040000 == 0)
     {
+        let name = dir.rsplit('/').next().unwrap_or(&dir).to_string();
+        // A long listing of ONE file still shows the owner by name, or
+        // `ls -l x` and `ls -l` would disagree about who owns `x` on the
+        // same screen. The name only exists in a DIRECTORY listing, so
+        // the parent is read to find it; a stat has no such line.
+        let named = if opts.long && !opts.numeric {
+            let parent = dir.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+            let parent = if parent.is_empty() { "/" } else { parent };
+            client
+                .list_dir_long(parent)
+                .await
+                .ok()
+                .and_then(|entries| entries.into_iter().find(|e| e.name == name))
+        } else {
+            None
+        };
         let entry = SftpEntry {
-            name: dir.rsplit('/').next().unwrap_or(&dir).to_string(),
+            owner: named.as_ref().and_then(|e| e.owner.clone()),
+            group: named.as_ref().and_then(|e| e.group.clone()),
+            name,
             is_dir: false,
             is_symlink: false,
             size: stat.size,
@@ -380,7 +446,20 @@ async fn ls(
         out.write(render::render_listing(&[entry], &opts, now_secs(), state.cols).as_bytes());
         return Ok(());
     }
-    let mut entries = client.list_dir(&dir).await?;
+    // A long listing asks for the owner NAMES, which cost an extra
+    // channel and a second code path; every other listing does not need
+    // them and does not pay for them. `-n` asked for the numbers, so it
+    // does not pay either.
+    let mut entries = if opts.long && !opts.numeric {
+        match client.list_dir_long(&dir).await {
+            Ok(entries) => entries,
+            // The names are a nicety and the listing is not. A server
+            // that refuses the long read still gets listed, numerically.
+            Err(_) => client.list_dir(&dir).await?,
+        }
+    } else {
+        client.list_dir(&dir).await?
+    };
     if let Some(pat) = pattern {
         entries.retain(|e| glob::matches(&pat, &e.name));
     }
@@ -403,6 +482,28 @@ async fn lls(opts: LsOpts, state: &ShellState, out: &mut impl ConsoleSink) -> Re
         ),
         _ => (target.clone(), None),
     };
+    // `lls <file>` lists THE FILE, the same way `ls <file>` does on the
+    // remote side. Without this the path goes to `read_dir`, which
+    // answers "not a directory" about a file that is plainly there, and
+    // the error names the wrong problem. The two sides of the console
+    // must not disagree about what an operand means.
+    if pattern.is_none()
+        && let Ok(meta) = tokio::fs::symlink_metadata(&dir).await
+        && !meta.is_dir()
+    {
+        let name = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| dir.display().to_string());
+        let is_symlink = meta.is_symlink();
+        let meta = tokio::fs::metadata(&dir).await.ok();
+        // `all` is forced on: the user named this file, so hiding it for
+        // starting with a dot would answer nothing at all.
+        let opts = LsOpts { all: true, ..opts };
+        let entry = local_entry(name, is_symlink, meta);
+        out.write(render::render_listing(&[entry], &opts, now_secs(), state.cols).as_bytes());
+        return Ok(());
+    }
     let mut entries = Vec::new();
     let mut read = tokio::fs::read_dir(&dir).await?;
     while let Some(entry) = read.next_entry().await? {
@@ -438,6 +539,8 @@ fn local_entry(name: String, is_symlink: bool, meta: Option<std::fs::Metadata>) 
             permissions: None,
             uid: None,
             gid: None,
+            owner: None,
+            group: None,
         };
     };
     SftpEntry {
@@ -453,6 +556,11 @@ fn local_entry(name: String, is_symlink: bool, meta: Option<std::fs::Metadata>) 
         permissions: unix_mode(&m),
         uid: unix_uid(&m),
         gid: unix_gid(&m),
+        // The local side has ids and no resolver: reading `/etc/passwd`
+        // to turn one into a name is a different feature from listing a
+        // directory, and the remote half is numeric by default too.
+        owner: None,
+        group: None,
     }
 }
 
@@ -584,7 +692,6 @@ async fn get(
     state: &ShellState,
     out: &mut impl ConsoleSink,
 ) -> Result<(), SshError> {
-    report_unsupported(&opts, "get", out);
     let sources = expand_remote(&remote, client, state).await?;
     // A named destination only makes sense for a single source; with
     // several it would mean overwriting the same file N times, so it
@@ -613,25 +720,188 @@ async fn get(
             (Some(l), true) => state.resolve_local(l).join(&base),
             (None, _) => state.local_cwd.join(&base),
         };
-        let size = client.stat(&source).await.ok().map(|s| s.size);
-        // ONE counter, shared: the transfer writes into it and the meter
-        // reads it. Minting a second one for the meter would leave it
-        // reading a counter nobody feeds, so the bar would sit at zero
-        // for the whole transfer and jump to done at the end.
-        let counter = Arc::new(AtomicU64::new(0));
-        transfer(
-            // The progress line goes to the terminal, so it carries the
-            // sanitized name; `dest` above was built from the real one.
-            &render::display_name(&base),
-            size,
-            state,
-            out,
-            Arc::clone(&counter),
-            client.download_to_progress(&source, &dest, size, Some(counter.clone())),
-        )
-        .await?;
+        let stat = client.stat(&source).await.ok();
+        if stat.as_ref().is_some_and(is_dir_stat) {
+            if !opts.recursive {
+                line(out, &format!("{source}: not a regular file"));
+                continue;
+            }
+            // The destination for a tree is the DIRECTORY the tree lands
+            // in, which is what `dest` already computed for a file of the
+            // same name.
+            get_tree(&opts, &source, &dest, client, state, out).await?;
+            continue;
+        }
+        get_one(&opts, &source, &base, &dest, stat, state, client, out).await?;
     }
     Ok(())
+}
+
+/// Whether a stat describes a directory. The mode's type bits are the
+/// only thing SFTP v3 offers to say so.
+fn is_dir_stat(stat: &crate::RemoteStat) -> bool {
+    stat.permissions.is_some_and(|m| m & 0o040000 != 0)
+}
+
+/// Download ONE file, meter and all, then settle its local attributes.
+#[allow(clippy::too_many_arguments)]
+async fn get_one(
+    opts: &XferOpts,
+    source: &str,
+    base: &str,
+    dest: &Path,
+    stat: Option<crate::RemoteStat>,
+    state: &ShellState,
+    client: &SftpClient,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    let size = stat.as_ref().map(|s| s.size);
+    // ONE counter, shared: the transfer writes into it and the meter
+    // reads it. Minting a second one for the meter would leave it
+    // reading a counter nobody feeds, so the bar would sit at zero
+    // for the whole transfer and jump to done at the end.
+    let counter = Arc::new(AtomicU64::new(0));
+    transfer(
+        // The progress line goes to the terminal, so it carries the
+        // sanitized name; `dest` was built from the real one.
+        &render::display_name(base),
+        size,
+        state,
+        out,
+        Arc::clone(&counter),
+        client.download_to_progress(source, dest, size, Some(counter.clone())),
+    )
+    .await?;
+
+    // The mode a downloaded file ends up with, and the reason `lumask`
+    // exists: without `-p` the source mode is not copied at all, so the
+    // starting point is the shell's own 0666 and the mask takes bits
+    // off it. With `-p` the source mode is the starting point and the
+    // mask still applies, which is what `sftp(1)` does.
+    let mode = if opts.preserve {
+        stat.as_ref().and_then(|s| s.permissions).map(|m| m & 0o7777)
+    } else {
+        Some(0o666)
+    };
+    if let Some(mode) = mode {
+        set_local_mode(dest, mode & !state.lumask, out);
+    }
+    if opts.preserve && let Some(mtime) = stat.as_ref().and_then(|s| s.mtime) {
+        set_local_mtime(dest, mtime, out);
+    }
+    if opts.fsync {
+        sync_local(dest, out).await;
+    }
+    Ok(())
+}
+
+/// Download a directory tree.
+///
+/// Iterative rather than recursive because an `async fn` that calls
+/// itself needs boxing at every level, and the stack here is a list of
+/// directories rather than a call chain anyway.
+///
+/// Two rules, both `sftp(1)`'s: a symlink is FOLLOWED, so a link to a
+/// file is fetched as that file, and anything that is neither a directory
+/// nor a regular file is named and skipped rather than silently dropped.
+async fn get_tree(
+    opts: &XferOpts,
+    root_remote: &str,
+    root_local: &Path,
+    client: &SftpClient,
+    state: &ShellState,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    let mut stack = vec![(root_remote.to_string(), root_local.to_path_buf())];
+    while let Some((remote_dir, local_dir)) = stack.pop() {
+        line(out, &format!("Retrieving {remote_dir}"));
+        if let Err(e) = tokio::fs::create_dir_all(&local_dir).await {
+            line(out, &format!("{}: {e}", local_dir.display()));
+            continue;
+        }
+        let entries = match client.list_dir(&remote_dir).await {
+            Ok(entries) => entries,
+            // One unreadable directory does not abandon the rest of the
+            // tree, the same way one failed `rm` does not abandon the
+            // rest of the line.
+            Err(e) => {
+                line(out, &e.to_string());
+                continue;
+            }
+        };
+        for entry in entries {
+            // Every component is checked, not just the one the user
+            // typed: past the first level these names are the SERVER's,
+            // and `..` among them would walk the download out of the
+            // destination directory entirely.
+            if !crate::sftp::is_safe_entry_name(&entry.name) {
+                let shown = render::display_name(&entry.name);
+                line(out, &format!("{shown}: skipped, unsafe file name"));
+                continue;
+            }
+            let remote_path = join_remote(&remote_dir, &entry.name);
+            let local_path = local_dir.join(&entry.name);
+            // A symlink's own listing entry says nothing about what it
+            // points at, so the target is stated for.
+            let stat = if entry.is_symlink {
+                match client.stat(&remote_path).await {
+                    Ok(s) => Some(s),
+                    Err(_) => {
+                        line(out, &format!("{remote_path}: skipping broken symlink"));
+                        continue;
+                    }
+                }
+            } else {
+                client.stat(&remote_path).await.ok()
+            };
+            let is_dir = stat.as_ref().is_some_and(is_dir_stat) || (entry.is_dir && stat.is_none());
+            if is_dir {
+                stack.push((remote_path, local_path));
+                continue;
+            }
+            if !is_regular(&stat, &entry) {
+                line(out, &format!("{remote_path}: skipping non-regular file"));
+                continue;
+            }
+            get_one(
+                opts,
+                &remote_path,
+                &entry.name,
+                &local_path,
+                stat,
+                state,
+                client,
+                out,
+            )
+            .await?;
+        }
+        if opts.preserve {
+            // The directory's own attributes are applied on the way out,
+            // after its contents exist: setting a read-only mode first
+            // would stop the very writes that fill it.
+            if let Ok(stat) = client.stat(&remote_dir).await {
+                if let Some(mode) = stat.permissions {
+                    set_local_mode(&local_dir, mode & 0o7777 & !state.lumask, out);
+                }
+                if let Some(mtime) = stat.mtime {
+                    set_local_mtime(&local_dir, mtime, out);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether an entry is a plain file worth transferring. A device node, a
+/// socket or a fifo is not, and copying one would produce something that
+/// is not the same object on the other side.
+fn is_regular(stat: &Option<crate::RemoteStat>, entry: &SftpEntry) -> bool {
+    match stat.as_ref().and_then(|s| s.permissions) {
+        Some(mode) => mode & 0o170000 == 0o100000,
+        // A server that does not report a mode leaves the listing as the
+        // only evidence, and it only distinguishes directories.
+        None => !entry.is_dir,
+    }
 }
 
 async fn put(
@@ -642,7 +912,6 @@ async fn put(
     state: &ShellState,
     out: &mut impl ConsoleSink,
 ) -> Result<(), SshError> {
-    report_unsupported(&opts, "put", out);
     let sources = expand_local(&local, state).await?;
     let multiple = sources.len() > 1;
     for source in sources {
@@ -665,52 +934,215 @@ async fn put(
             (Some(r), true) => join_remote(&state.resolve_remote(r), &base),
             (None, _) => join_remote(&state.remote_cwd, &base),
         };
-        let size = tokio::fs::metadata(&source).await.ok().map(|m| m.len());
-        let counter = Arc::new(AtomicU64::new(0));
-        let options = crate::sftp::UploadOptions {
-            progress: Some(counter.clone()),
-            // Unlike download, resume here is only ever the user's
-            // explicit `-a` / `reput`: an upload writes into someone
-            // else's namespace, where a shorter file with a matching
-            // tail is only PROBABLY the same file.
-            resume: opts.resume,
-            ..Default::default()
-        };
-        transfer(
-            &render::display_name(&base),
-            size,
-            state,
-            out,
-            Arc::clone(&counter),
-            client.upload_from_options(&source, &dest, options),
-        )
-        .await?;
+        let meta = tokio::fs::metadata(&source).await.ok();
+        if meta.as_ref().is_some_and(std::fs::Metadata::is_dir) {
+            if !opts.recursive {
+                line(out, &format!("{}: not a regular file", source.display()));
+                continue;
+            }
+            put_tree(&opts, &source, &dest, client, state, out).await?;
+            continue;
+        }
+        put_one(&opts, &source, &base, &dest, meta, state, client, out).await?;
     }
     Ok(())
 }
 
-/// Say which accepted flags this build does not act on.
-///
-/// The alternative is what the first version did: take `-r` and quietly
-/// transfer nothing, so `get -r logs` failed with a stat error naming a
-/// file the user never mentioned. A flag that is parsed and ignored is
-/// worse than one that is rejected, because the user has no way to tell
-/// which happened.
-///
-/// `-a` is NOT listed for `get` and that is not an omission: the
-/// download path decides resume for itself and can verify the tail it
-/// resumes from, so the flag asks for something already being done.
-/// On `put` it is honoured, because there the destination belongs to
-/// someone else and resume has to be asked for.
-fn report_unsupported(opts: &XferOpts, cmd: &str, out: &mut impl ConsoleSink) {
-    if opts.recursive {
-        line(out, &format!("{cmd}: -r is not supported yet, skipping it"));
+/// Upload ONE file, meter and all, then settle its remote attributes.
+#[allow(clippy::too_many_arguments)]
+async fn put_one(
+    opts: &XferOpts,
+    source: &Path,
+    base: &str,
+    dest: &str,
+    meta: Option<std::fs::Metadata>,
+    state: &ShellState,
+    client: &SftpClient,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    let size = meta.as_ref().map(std::fs::Metadata::len);
+    let counter = Arc::new(AtomicU64::new(0));
+    let options = crate::sftp::UploadOptions {
+        progress: Some(counter.clone()),
+        // Unlike download, resume here is only ever the user's
+        // explicit `-a` / `reput`: an upload writes into someone
+        // else's namespace, where a shorter file with a matching
+        // tail is only PROBABLY the same file.
+        resume: opts.resume,
+        // `-f` asks the server to flush before it answers, which is the
+        // only place the guarantee can be made: an upload that returned
+        // and then lost the file to a power cut reported a success that
+        // was not one.
+        fsync: opts.fsync,
+        ..Default::default()
+    };
+    transfer(
+        &render::display_name(base),
+        size,
+        state,
+        out,
+        Arc::clone(&counter),
+        client.upload_from_options(source, dest, options),
+    )
+    .await?;
+
+    if opts.preserve && let Some(meta) = meta {
+        let update = crate::AttrUpdate {
+            permissions: unix_mode(&meta).map(|m| m & 0o7777),
+            atime: file_seconds(meta.accessed().ok()),
+            mtime: file_seconds(meta.modified().ok()),
+            ..Default::default()
+        };
+        // The times are a PAIR on the wire, so a metadata read that
+        // answered only one of them would send a zero for the other.
+        let update = if update.atime.is_none() || update.mtime.is_none() {
+            crate::AttrUpdate {
+                atime: None,
+                mtime: None,
+                ..update
+            }
+        } else {
+            update
+        };
+        if let Err(e) = client.set_attrs(dest, update, true).await {
+            line(out, &e.to_string());
+        }
     }
-    if opts.preserve {
-        line(out, &format!("{cmd}: -p is not supported yet, skipping it"));
+    Ok(())
+}
+
+/// Upload a directory tree, the mirror of [`get_tree`].
+///
+/// A local symlink is followed for the same reason the remote one is: the
+/// user asked for the tree they can see, and a link to a file reads as
+/// that file everywhere else they look at it.
+async fn put_tree(
+    opts: &XferOpts,
+    root_local: &Path,
+    root_remote: &str,
+    client: &SftpClient,
+    state: &ShellState,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    let mut stack = vec![(root_local.to_path_buf(), root_remote.to_string())];
+    while let Some((local_dir, remote_dir)) = stack.pop() {
+        line(out, &format!("Entering {}", local_dir.display()));
+        // An existing directory is not an error here: `put -r` over a
+        // tree that is partly there is the ordinary way to finish an
+        // interrupted upload.
+        if let Err(e) = client.create_dir(&remote_dir).await
+            && !is_remote_dir(client, &remote_dir).await
+        {
+            line(out, &e.to_string());
+            continue;
+        }
+        let mut read = match tokio::fs::read_dir(&local_dir).await {
+            Ok(read) => read,
+            Err(e) => {
+                line(out, &format!("{}: {e}", local_dir.display()));
+                continue;
+            }
+        };
+        while let Ok(Some(entry)) = read.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let local_path = entry.path();
+            let remote_path = join_remote(&remote_dir, &name);
+            // `metadata` follows links; a broken one has no target to
+            // send and is named rather than dropped.
+            let meta = match tokio::fs::metadata(&local_path).await {
+                Ok(m) => m,
+                Err(e) => {
+                    line(out, &format!("{}: {e}", local_path.display()));
+                    continue;
+                }
+            };
+            if meta.is_dir() {
+                stack.push((local_path, remote_path));
+                continue;
+            }
+            if !meta.is_file() {
+                line(
+                    out,
+                    &format!("{}: skipping non-regular file", local_path.display()),
+                );
+                continue;
+            }
+            put_one(
+                opts,
+                &local_path,
+                &name,
+                &remote_path,
+                Some(meta),
+                state,
+                client,
+                out,
+            )
+            .await?;
+        }
+        if opts.preserve && let Ok(meta) = tokio::fs::metadata(&local_dir).await {
+            // On the way out, for the same reason the download side does
+            // it: a read-only mode applied first would stop the writes
+            // that fill the directory.
+            let update = crate::AttrUpdate {
+                permissions: unix_mode(&meta).map(|m| m & 0o7777),
+                ..Default::default()
+            };
+            if update.permissions.is_some()
+                && let Err(e) = client.set_attrs(&remote_dir, update, true).await
+            {
+                line(out, &e.to_string());
+            }
+        }
     }
-    if opts.fsync {
-        line(out, &format!("{cmd}: -f is not supported yet, skipping it"));
+    Ok(())
+}
+
+/// A `SystemTime` as the u32 unix seconds the protocol carries, or `None`
+/// when it falls outside what that can express.
+fn file_seconds(t: Option<std::time::SystemTime>) -> Option<u32> {
+    t?.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+        .and_then(|s| u32::try_from(s).ok())
+}
+
+/// Apply a permission bitmask to a local path, reporting a failure rather
+/// than failing the transfer: the bytes arrived, and that is the part the
+/// user asked for.
+#[cfg(unix)]
+fn set_local_mode(path: &Path, mode: u32, out: &mut impl ConsoleSink) {
+    use std::os::unix::fs::PermissionsExt as _;
+    if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)) {
+        line(out, &format!("{}: {e}", path.display()));
+    }
+}
+
+/// Windows has no mode bits, so there is nothing to apply. Silent rather
+/// than reported: this runs on every download, and a line per file saying
+/// the platform is the platform is noise.
+#[cfg(not(unix))]
+fn set_local_mode(path: &Path, mode: u32, out: &mut impl ConsoleSink) {
+    let _ = (path, mode, out);
+}
+
+fn set_local_mtime(path: &Path, mtime: u32, out: &mut impl ConsoleSink) {
+    let stamp = filetime::FileTime::from_unix_time(i64::from(mtime), 0);
+    if let Err(e) = filetime::set_file_mtime(path, stamp) {
+        line(out, &format!("{}: {e}", path.display()));
+    }
+}
+
+/// Flush a downloaded file to the disk it landed on. The remote twin of
+/// `put -f`, and the same promise: the call returned, so the bytes are
+/// there.
+async fn sync_local(path: &Path, out: &mut impl ConsoleSink) {
+    match tokio::fs::File::open(path).await {
+        Ok(f) => {
+            if let Err(e) = f.sync_all().await {
+                line(out, &format!("{}: {e}", path.display()));
+            }
+        }
+        Err(e) => line(out, &format!("{}: {e}", path.display())),
     }
 }
 
@@ -751,6 +1183,95 @@ async fn rm(
 async fn chmod(
     mode: u32,
     paths: Vec<String>,
+    follow: bool,
+    client: &SftpClient,
+    state: &ShellState,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    let update = crate::AttrUpdate {
+        permissions: Some(mode),
+        ..Default::default()
+    };
+    apply_attrs("Changing mode on", update, paths, follow, client, state, out).await
+}
+
+async fn chown(
+    id: u32,
+    which: Owner,
+    paths: Vec<String>,
+    follow: bool,
+    client: &SftpClient,
+    state: &ShellState,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    // The protocol sends uid and gid in ONE attribute word, so changing
+    // either means naming both. The other half is read back per target
+    // rather than assumed: sending a zero for it would hand every file to
+    // root, which is a spectacular way to answer `chgrp`.
+    let label = match which {
+        Owner::User => "Changing owner on",
+        Owner::Group => "Changing group on",
+    };
+    for operand in paths {
+        match expand_remote(&operand, client, state).await {
+            Ok(targets) => {
+                for target in targets {
+                    line(out, &format!("{label} {target}"));
+                    let current = if follow {
+                        client.stat(&target).await
+                    } else {
+                        client.lstat(&target).await
+                    };
+                    let current = match current {
+                        Ok(st) => st,
+                        Err(e) => {
+                            line(out, &e.to_string());
+                            continue;
+                        }
+                    };
+                    let (uid, gid) = match which {
+                        Owner::User => (Some(id), current.gid),
+                        Owner::Group => (current.uid, Some(id)),
+                    };
+                    // The half the user did not name has to be sent back
+                    // unchanged, and a server that reported no ids leaves
+                    // nothing to send. Refusing is the only safe answer:
+                    // the flag covers both words, so the request would
+                    // carry a zero, and zero is root.
+                    let (Some(uid), Some(gid)) = (uid, gid) else {
+                        line(
+                            out,
+                            &format!(
+                                "{target}: the server did not report the current owner, so \
+                                 {} alone cannot be changed",
+                                which.verb()
+                            ),
+                        );
+                        continue;
+                    };
+                    let update = crate::AttrUpdate {
+                        uid: Some(uid),
+                        gid: Some(gid),
+                        ..Default::default()
+                    };
+                    if let Err(e) = client.set_attrs(&target, update, follow).await {
+                        line(out, &e.to_string());
+                    }
+                }
+            }
+            Err(e) => line(out, &e.to_string()),
+        }
+    }
+    Ok(())
+}
+
+/// The shape `chmod` and `chown` share: expand each operand, act on every
+/// match, and let a failure on one leave the rest alone.
+async fn apply_attrs(
+    label: &str,
+    update: crate::AttrUpdate,
+    paths: Vec<String>,
+    follow: bool,
     client: &SftpClient,
     state: &ShellState,
     out: &mut impl ConsoleSink,
@@ -759,8 +1280,8 @@ async fn chmod(
         match expand_remote(&operand, client, state).await {
             Ok(targets) => {
                 for target in targets {
-                    line(out, &format!("Changing mode on {target}"));
-                    if let Err(e) = client.chmod(&target, mode).await {
+                    line(out, &format!("{label} {target}"));
+                    if let Err(e) = client.set_attrs(&target, update, follow).await {
                         line(out, &e.to_string());
                     }
                 }
@@ -768,6 +1289,62 @@ async fn chmod(
             Err(e) => line(out, &e.to_string()),
         }
     }
+    Ok(())
+}
+
+async fn ln(
+    target: String,
+    link: String,
+    symbolic: bool,
+    client: &SftpClient,
+    state: &ShellState,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    let link = state.resolve_remote(&link);
+    if symbolic {
+        // The TARGET is deliberately NOT resolved against the working
+        // directory. A symlink's target is stored as written and is read
+        // relative to the link's own directory, so rewriting `../lib`
+        // into an absolute path would create a different link than the
+        // one asked for, and one that breaks if the tree moves.
+        let target = glob::unescape(&target);
+        return client.symlink(&target, &link).await;
+    }
+    // A hard link, by contrast, is resolved: it names an inode that has
+    // to exist right now.
+    let target = state.resolve_remote(&target);
+    if !client.hardlink(&target, &link).await? {
+        line(
+            out,
+            "This server does not offer hardlink@openssh.com. Use ln -s for a symbolic link.",
+        );
+    }
+    Ok(())
+}
+
+async fn df(
+    path: Option<String>,
+    human: bool,
+    inodes: bool,
+    client: &SftpClient,
+    state: &ShellState,
+    out: &mut impl ConsoleSink,
+) -> Result<(), SshError> {
+    let target = match path {
+        Some(p) => state.resolve_remote(&p),
+        None => state.remote_cwd.clone(),
+    };
+    let Some(info) = client.fs_info(&target).await? else {
+        // Not an error: the question cannot be asked of this server, and
+        // saying which extension is missing is what tells an operator
+        // whether that is worth changing.
+        line(
+            out,
+            "This server does not offer statvfs@openssh.com, so free space cannot be read.",
+        );
+        return Ok(());
+    };
+    out.write(render::df_table(&info, human, inodes).as_bytes());
     Ok(())
 }
 

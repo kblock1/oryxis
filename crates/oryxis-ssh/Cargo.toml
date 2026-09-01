@@ -27,6 +27,9 @@ unicode-width = "0.2"
 # fake MIT-MAGIC-COOKIE-1 announced to the remote in place of the real one.
 dirs = "6"
 getrandom = "0.4"
+# `get -p` / `put -p` preserve modification times, and std has no way to
+# SET one. Already in the lock as a transitive, so this adds no weight.
+filetime = "0.2"
 
 # Enumerate the named-pipe namespace to discover Pageant/KeePassXC's
 # per-launch agent pipe (windows_agent_pipe). Windows-only.

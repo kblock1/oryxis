@@ -759,3 +759,224 @@ async fn console_transfers_a_file_whose_name_looks_like_a_pattern() {
     assert!(seen.contains("report[1].txt"), "the upload did not arrive:\n{seen}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `df` reads free space through `statvfs@openssh.com`.
+///
+/// The columns are `df`'s and so is the arithmetic behind them: USED
+/// counts against free while the percentage counts against AVAILABLE, and
+/// the gap between the two is the filesystem's reserve.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_reports_free_space() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    console.write(b"df\r").expect("write");
+    let seen = expect_output(&mut out, "%Capacity", Duration::from_secs(10)).await;
+    assert!(seen.contains("Size"), "no block header in:\n{seen}");
+    assert!(!seen.contains("does not offer"), "extension missing:\n{seen}");
+
+    console.write(b"df -i\r").expect("write");
+    let seen = expect_output(&mut out, "Inodes", Duration::from_secs(10)).await;
+    assert!(seen.contains("%Capacity"), "no inode table in:\n{seen}");
+}
+
+/// `ln -s` creates a link pointing the way it was asked to.
+///
+/// Worth an end-to-end test rather than a unit one because
+/// `SSH_FXP_SYMLINK` carries its two operands in the opposite order from
+/// the specification it implements, a swap old enough to be the de facto
+/// protocol. Getting it backwards creates a link with no error at all,
+/// pointing at a name that does not exist.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_links_and_copies() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    let dir = std::env::temp_dir().join(format!("oryxis-link-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::write(dir.join("real.txt"), b"the payload").expect("write source");
+    console
+        .write(format!("lcd {}\r", dir.display()).as_bytes())
+        .expect("write");
+    console.write(b"put real.txt\r").expect("write");
+    expect_output(&mut out, "real.txt", Duration::from_secs(20)).await;
+
+    console.write(b"ln -s real.txt link.txt\r").expect("write");
+    console.write(b"ls -l\r").expect("write");
+    let seen = expect_output(&mut out, "link.txt", Duration::from_secs(10)).await;
+    assert!(seen.contains('l'), "no symlink in the listing:\n{seen}");
+
+    // The proof the direction is right: fetching THROUGH the link gets
+    // the payload. A link created the other way round would resolve to a
+    // name that does not exist.
+    console.write(b"get link.txt fetched.txt\r").expect("write");
+    expect_output(&mut out, "link.txt", Duration::from_secs(20)).await;
+    assert_eq!(
+        std::fs::read_to_string(dir.join("fetched.txt")).unwrap_or_default(),
+        "the payload",
+        "the symlink pointed the wrong way"
+    );
+
+    // And a remote-to-remote copy is a real second file.
+    console.write(b"cp real.txt copied.txt\r").expect("write");
+    console.write(b"get copied.txt copy.txt\r").expect("write");
+    expect_output(&mut out, "copied.txt", Duration::from_secs(20)).await;
+    assert_eq!(
+        std::fs::read_to_string(dir.join("copy.txt")).unwrap_or_default(),
+        "the payload",
+        "copy did not carry the contents"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `-r` walks a tree in both directions, and `-p` carries the mode
+/// across.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_round_trips_a_directory_tree() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    let dir = std::env::temp_dir().join(format!("oryxis-tree-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(dir.join("tree/nested")).expect("scratch dir");
+    std::fs::write(dir.join("tree/top.txt"), b"top").expect("write top");
+    std::fs::write(dir.join("tree/nested/deep.txt"), b"deep").expect("write deep");
+    console
+        .write(format!("lcd {}\r", dir.display()).as_bytes())
+        .expect("write");
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    // Without -r a directory is named and skipped rather than failing
+    // with a stat error about a file the user never mentioned.
+    console.write(b"put tree\r").expect("write");
+    let seen = expect_output(&mut out, "not a regular file", Duration::from_secs(10)).await;
+    assert!(seen.contains("not a regular file"), "silent skip:\n{seen}");
+
+    console.write(b"put -r tree uploaded\r").expect("write");
+    expect_output(&mut out, "deep.txt", Duration::from_secs(30)).await;
+    console.write(b"ls -1 uploaded/nested\r").expect("write");
+    let seen = expect_output(&mut out, "deep.txt", Duration::from_secs(10)).await;
+    assert!(seen.contains("deep.txt"), "the nested file never landed:\n{seen}");
+
+    console.write(b"get -r uploaded fetched\r").expect("write");
+    expect_output(&mut out, "deep.txt", Duration::from_secs(30)).await;
+    assert_eq!(
+        std::fs::read_to_string(dir.join("fetched/nested/deep.txt")).unwrap_or_default(),
+        "deep",
+        "the tree did not come back whole"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `lumask` masks what `get` creates, and `-p` starts from the remote
+/// mode instead of from 0666. Both are unix-only facts, so the assertion
+/// is too: on Windows there are no mode bits to carry.
+#[cfg(unix)]
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_applies_the_local_umask_and_preserves_modes() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    let dir = std::env::temp_dir().join(format!("oryxis-umask-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::write(dir.join("source.txt"), b"modes").expect("write source");
+    console
+        .write(format!("lcd {}\r", dir.display()).as_bytes())
+        .expect("write");
+    console.write(b"put source.txt\r").expect("write");
+    expect_output(&mut out, "source.txt", Duration::from_secs(20)).await;
+    console.write(b"chmod 640 source.txt\r").expect("write");
+    expect_output(&mut out, "Changing mode", Duration::from_secs(10)).await;
+
+    console.write(b"lumask 077\r").expect("write");
+    console.write(b"get source.txt plain.txt\r").expect("write");
+    expect_output(&mut out, "source.txt", Duration::from_secs(20)).await;
+    let mode = std::fs::metadata(dir.join("plain.txt")).unwrap().permissions().mode() & 0o777;
+    // No -p, so the base is the shell's 0666 and the mask takes the rest.
+    assert_eq!(mode, 0o600, "the umask was not applied");
+
+    console.write(b"lumask 000\r").expect("write");
+    console.write(b"get -p source.txt kept.txt\r").expect("write");
+    expect_output(&mut out, "source.txt", Duration::from_secs(20)).await;
+    let mode = std::fs::metadata(dir.join("kept.txt")).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o640, "-p did not carry the remote mode");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `ls -l` resolves the owner to a NAME, and a listing that fails says so.
+///
+/// The two halves belong in one test because they are one mechanism: the
+/// long listing reads the server's own human-readable line, page by page,
+/// and the end of that paging is reported as an error status. A loop that
+/// treated EVERY error as the end would turn a permission failure into a
+/// directory that merely looks shorter than it is, with nothing said.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_names_the_owner_and_reports_a_refused_listing() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    console.write(b"ls -l\r").expect("write");
+    let seen = expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+    assert!(
+        seen.contains(TEST_USER),
+        "the owner was not resolved to a name in:\n{seen}"
+    );
+
+    // `-n` asks for the number even when a name is in hand.
+    console.write(b"ls -ln\r").expect("write");
+    let seen = expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+    assert!(!seen.contains(TEST_USER), "-n still showed a name in:\n{seen}");
+
+    // A directory the user may not read is an ERROR, not an empty one.
+    console.write(b"ls -l /root\r").expect("write");
+    let seen = expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+    assert!(
+        seen.to_lowercase().contains("permission")
+            || seen.to_lowercase().contains("no such"),
+        "a refused listing was reported as empty:\n{seen}"
+    );
+
+    assert!(console.is_alive(), "a refused listing closed the console");
+}
+
+/// `chown` and `chgrp` change one half of the ownership and leave the
+/// other where it was.
+///
+/// The two ids share ONE flag on the wire, so a request naming only one
+/// of them writes a zero for the other, and zero is root. The half the
+/// user did not name is read back and sent unchanged; this is the test
+/// that the reading actually happens.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_changes_one_half_of_the_ownership() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    let dir = std::env::temp_dir().join(format!("oryxis-own-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::write(dir.join("owned.txt"), b"ids").expect("write source");
+    console
+        .write(format!("lcd {}\r", dir.display()).as_bytes())
+        .expect("write");
+    console.write(b"put owned.txt\r").expect("write");
+    expect_output(&mut out, "owned.txt", Duration::from_secs(20)).await;
+
+    // The container runs as 1000:1000, so setting each id to what it
+    // already is succeeds without needing root, and the assertion is
+    // about the OTHER half surviving.
+    console.write(b"chgrp 1000 owned.txt\r").expect("write");
+    expect_output(&mut out, "Changing group", Duration::from_secs(10)).await;
+    console.write(b"ls -ln owned.txt\r").expect("write");
+    let seen = expect_output(&mut out, "owned.txt", Duration::from_secs(10)).await;
+    assert!(
+        !seen.contains(" 0 0 "),
+        "chgrp zeroed the owner it was not asked about:\n{seen}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

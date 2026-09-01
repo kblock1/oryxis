@@ -864,6 +864,7 @@ async fn harness_upload_resume_and_its_refusals() {
                 progress: Some(moved.clone()),
                 resume: true,
                 temp_name: false,
+                fsync: false,
             },
         )
         .await

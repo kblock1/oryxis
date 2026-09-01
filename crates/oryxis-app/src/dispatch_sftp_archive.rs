@@ -733,6 +733,9 @@ pub(crate) fn zip_relist(pane: &mut PaneState) {
                 permissions: None,
                 uid: None,
                 gid: None,
+                // A zip central directory records no ownership at all.
+                owner: None,
+                group: None,
             })
             .collect();
         crate::sftp_helpers::sort_remote_entries(&mut entries, pane.sort);

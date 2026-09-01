@@ -59,6 +59,11 @@ impl LocalFs {
                 permissions,
                 uid,
                 gid,
+                // The local browser has ids and no resolver; the column
+                // shows numbers here exactly as it does for a remote
+                // listing the server did not name.
+                owner: None,
+                group: None,
             });
         }
         Ok(entries)

@@ -1036,6 +1036,8 @@ mod tests {
             permissions: Some(perm),
             uid: Some(uid),
             gid: Some(0),
+            owner: None,
+            group: None,
         };
         // Permissions: numeric mode order, names break the tie.
         let mut rows = vec![entry("b.txt", 0o755, 1), entry("a.txt", 0o755, 2), entry("c.txt", 0o600, 3)];

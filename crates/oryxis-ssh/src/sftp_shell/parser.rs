@@ -51,10 +51,44 @@ pub enum Command {
         from: String,
         to: String,
     },
+    /// Remote-to-remote copy (`copy` / `cp`).
+    Copy {
+        from: String,
+        to: String,
+    },
     Chmod {
         mode: u32,
         paths: Vec<String>,
+        /// `-h`: act on a symlink itself rather than on its target.
+        follow: bool,
     },
+    /// `chown` and `chgrp`, which differ only in which id they carry.
+    /// One variant because everything downstream is identical, and the
+    /// protocol sends both ids in one attribute word anyway.
+    Chown {
+        id: u32,
+        which: Owner,
+        paths: Vec<String>,
+        follow: bool,
+    },
+    /// `ln [-s]` and its alias `symlink`. `target` is what the link
+    /// points at, `link` is what gets created, in the order `ln(1)` takes
+    /// them.
+    Ln {
+        target: String,
+        link: String,
+        symbolic: bool,
+    },
+    /// Free space on the filesystem holding a remote path.
+    Df {
+        path: Option<String>,
+        /// `-h`: sizes as 1.2K / 3.4G.
+        human: bool,
+        /// `-i`: inode counts instead of blocks.
+        inodes: bool,
+    },
+    /// The mask applied to files `get` creates locally.
+    Lumask(u32),
     /// Toggle the transfer progress meter. `sftp(1)` takes no argument
     /// and reports the new state.
     Progress,
@@ -63,6 +97,24 @@ pub enum Command {
     Version,
     /// `bye` / `quit` / `exit`.
     Quit,
+}
+
+/// Which half of the ownership pair a [`Command::Chown`] carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Owner {
+    User,
+    Group,
+}
+
+impl Owner {
+    /// The verb that produced it, for error messages that name what the
+    /// user typed rather than the variant behind it.
+    pub fn verb(self) -> &'static str {
+        match self {
+            Owner::User => "chown",
+            Owner::Group => "chgrp",
+        }
+    }
 }
 
 /// Flags shared by `ls` and `lls`, which take the same set, plus the
@@ -132,8 +184,10 @@ pub enum ParseError {
     TooManyOperands(&'static str),
     /// A flag the command does not accept.
     UnknownFlag { command: &'static str, flag: char },
-    /// `chmod`'s mode did not parse as octal.
+    /// `chmod`'s mode or `lumask`'s mask did not parse as octal.
     BadMode(String),
+    /// `chown` / `chgrp` were given something that is not a numeric id.
+    BadOwner(String),
 }
 
 impl std::fmt::Display for ParseError {
@@ -150,6 +204,13 @@ impl std::fmt::Display for ParseError {
                 write!(f, "{command}: unknown option -- {flag}")
             }
             ParseError::BadMode(m) => write!(f, "chmod: invalid mode: {m}"),
+            // Naming the protocol limit rather than just refusing: the
+            // obvious next thing to type is a user NAME, and there is no
+            // way for the client to resolve one.
+            ParseError::BadOwner(o) => write!(
+                f,
+                "invalid owner: {o}. Owners and groups are numeric ids over SFTP."
+            ),
         }
     }
 }
@@ -206,8 +267,13 @@ pub const VERBS: &[Verb] = &[
     verb("bye", &[], false),
     verb("cd", &[ArgSpace::Remote], false),
     verb("chdir", &[ArgSpace::Remote], false),
+    verb("chgrp", &[ArgSpace::None, ArgSpace::Remote], true),
     verb("chmod", &[ArgSpace::None, ArgSpace::Remote], true),
+    verb("chown", &[ArgSpace::None, ArgSpace::Remote], true),
+    verb("copy", &[ArgSpace::Remote, ArgSpace::Remote], false),
+    verb("cp", &[ArgSpace::Remote, ArgSpace::Remote], false),
     verb("delete", &[ArgSpace::Remote], true),
+    verb("df", &[ArgSpace::Remote], false),
     verb("dir", &[ArgSpace::Remote], false),
     verb("exit", &[], false),
     verb("get", &[ArgSpace::Remote, ArgSpace::Local], false),
@@ -216,8 +282,10 @@ pub const VERBS: &[Verb] = &[
     verb("lchdir", &[ArgSpace::Local], false),
     verb("lls", &[ArgSpace::Local], false),
     verb("lmkdir", &[ArgSpace::Local], false),
+    verb("ln", &[ArgSpace::Remote, ArgSpace::Remote], false),
     verb("lpwd", &[], false),
     verb("ls", &[ArgSpace::Remote], false),
+    verb("lumask", &[ArgSpace::None], false),
     verb("mget", &[ArgSpace::Remote, ArgSpace::Local], false),
     verb("mkdir", &[ArgSpace::Remote], false),
     verb("mput", &[ArgSpace::Local, ArgSpace::Remote], false),
@@ -230,6 +298,7 @@ pub const VERBS: &[Verb] = &[
     verb("reput", &[ArgSpace::Local, ArgSpace::Remote], false),
     verb("rm", &[ArgSpace::Remote], true),
     verb("rmdir", &[ArgSpace::Remote], false),
+    verb("symlink", &[ArgSpace::Remote, ArgSpace::Remote], false),
     verb("version", &[], false),
 ];
 
@@ -424,20 +493,123 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
             })
         }
         "chmod" => {
-            if rest.len() < 2 {
+            // `-h` has to come off BEFORE the mode is read, or `chmod -h
+            // 644 f` reports an invalid mode of `-h`, which names the
+            // wrong problem entirely.
+            let (follow, operands) = parse_nofollow(&rest, "chmod")?;
+            if operands.len() < 2 {
                 return Err(ParseError::MissingOperand("chmod"));
             }
-            let mode = u32::from_str_radix(rest[0], 8)
-                .map_err(|_| ParseError::BadMode(rest[0].to_string()))?;
-            // A mode is at most four octal digits. Anything wider is a
-            // typo that would otherwise be masked into something valid.
-            if mode > 0o7777 {
-                return Err(ParseError::BadMode(rest[0].to_string()));
-            }
+            let mode = parse_octal(&operands[0], 0o7777)?;
             Ok(Command::Chmod {
                 mode,
-                paths: rest[1..].iter().map(|s| s.to_string()).collect(),
+                paths: operands[1..].to_vec(),
+                follow,
             })
+        }
+        "chown" | "chgrp" => {
+            let which = if verb.eq_ignore_ascii_case("chown") {
+                Owner::User
+            } else {
+                Owner::Group
+            };
+            let (follow, operands) = parse_nofollow(&rest, which.verb())?;
+            if operands.len() < 2 {
+                return Err(ParseError::MissingOperand(which.verb()));
+            }
+            // Numeric only, and that is the protocol's limit rather than
+            // ours: SFTP v3 carries uid and gid as numbers, with no way
+            // to ask the server what a name resolves to. `sftp(1)` says
+            // the same thing in its own manual.
+            let id = operands[0]
+                .parse::<u32>()
+                .map_err(|_| ParseError::BadOwner(operands[0].clone()))?;
+            Ok(Command::Chown {
+                id,
+                which,
+                paths: operands[1..].to_vec(),
+                follow,
+            })
+        }
+        "ln" | "symlink" => {
+            // `symlink` is `ln -s` spelled as a verb, the way `reget` is
+            // `get -a`: collapsed here so the executor has one path.
+            let mut symbolic = verb.eq_ignore_ascii_case("symlink");
+            let mut operands = Vec::new();
+            for word in &rest {
+                match flag_body(word) {
+                    Some(flags) => {
+                        for f in flags.chars() {
+                            match f {
+                                's' => symbolic = true,
+                                other => {
+                                    return Err(ParseError::UnknownFlag {
+                                        command: "ln",
+                                        flag: other,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    None => operands.push(word.to_string()),
+                }
+            }
+            if operands.len() < 2 {
+                return Err(ParseError::MissingOperand("ln"));
+            }
+            if operands.len() > 2 {
+                return Err(ParseError::TooManyOperands("ln"));
+            }
+            let mut it = operands.into_iter();
+            Ok(Command::Ln {
+                target: it.next().unwrap_or_default(),
+                link: it.next().unwrap_or_default(),
+                symbolic,
+            })
+        }
+        "copy" | "cp" => {
+            if rest.len() < 2 {
+                return Err(ParseError::MissingOperand("copy"));
+            }
+            if rest.len() > 2 {
+                return Err(ParseError::TooManyOperands("copy"));
+            }
+            Ok(Command::Copy {
+                from: rest[0].to_string(),
+                to: rest[1].to_string(),
+            })
+        }
+        "df" => {
+            let mut opts = (None, false, false);
+            for word in &rest {
+                match flag_body(word) {
+                    Some(flags) => {
+                        for f in flags.chars() {
+                            match f {
+                                'h' => opts.1 = true,
+                                'i' => opts.2 = true,
+                                other => {
+                                    return Err(ParseError::UnknownFlag {
+                                        command: "df",
+                                        flag: other,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    None if opts.0.is_none() => opts.0 = Some(word.to_string()),
+                    None => return Err(ParseError::TooManyOperands("df")),
+                }
+            }
+            Ok(Command::Df {
+                path: opts.0,
+                human: opts.1,
+                inodes: opts.2,
+            })
+        }
+        "lumask" => {
+            let raw = exactly_one(&rest, "lumask")?;
+            Ok(Command::Lumask(parse_octal(&raw, 0o777)?))
         }
         "progress" => Ok(Command::Progress),
         "help" | "?" => Ok(Command::Help),
@@ -445,6 +617,49 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
         "bye" | "quit" | "exit" => Ok(Command::Quit),
         other => Err(ParseError::UnknownCommand(other.to_string())),
     }
+}
+
+/// Pull the `-h` off a command that accepts it, returning whether a
+/// final symlink should be FOLLOWED (so `-h` means `false`) plus the
+/// operands that remain.
+///
+/// Shared by `chmod` / `chown` / `chgrp`, which take exactly this one
+/// flag and take it in the same place.
+fn parse_nofollow(rest: &[&str], cmd: &'static str) -> Result<(bool, Vec<String>), ParseError> {
+    let mut follow = true;
+    let mut operands = Vec::new();
+    for word in rest {
+        match flag_body(word) {
+            Some(flags) => {
+                for f in flags.chars() {
+                    match f {
+                        'h' => follow = false,
+                        other => {
+                            return Err(ParseError::UnknownFlag {
+                                command: cmd,
+                                flag: other,
+                            });
+                        }
+                    }
+                }
+            }
+            None => operands.push(word.to_string()),
+        }
+    }
+    Ok((follow, operands))
+}
+
+/// Read an octal literal, refusing anything wider than `max`.
+///
+/// A decimal-looking mode is the classic mistake and `999` is not octal
+/// at all. The width check matters just as much: masking `77777` into
+/// something valid would change permissions the user never asked for.
+fn parse_octal(raw: &str, max: u32) -> Result<u32, ParseError> {
+    let value = u32::from_str_radix(raw, 8).map_err(|_| ParseError::BadMode(raw.to_string()))?;
+    if value > max {
+        return Err(ParseError::BadMode(raw.to_string()));
+    }
+    Ok(value)
 }
 
 /// A command taking zero or one operand.
@@ -676,7 +891,8 @@ mod tests {
         const PARSED: &[&str] = &[
             "cd", "chdir", "lcd", "lchdir", "pwd", "lpwd", "ls", "dir", "lls", "get", "reget",
             "mget", "put", "reput", "mput", "rm", "delete", "mkdir", "lmkdir", "rmdir", "rename",
-            "chmod", "progress", "help", "?", "version", "bye", "quit", "exit",
+            "copy", "cp", "chmod", "chown", "chgrp", "ln", "symlink", "df", "lumask", "progress",
+            "help", "?", "version", "bye", "quit", "exit",
         ];
         for name in PARSED {
             assert!(
@@ -867,16 +1083,150 @@ mod tests {
             ok("chmod 644 f"),
             Command::Chmod {
                 mode: 0o644,
-                paths: vec!["f".into()]
+                paths: vec!["f".into()],
+                follow: true,
             }
         );
         assert_eq!(
             ok("chmod 4755 a b"),
             Command::Chmod {
                 mode: 0o4755,
-                paths: vec!["a".into(), "b".into()]
+                paths: vec!["a".into(), "b".into()],
+                follow: true,
             }
         );
+    }
+
+    /// `-h` has to come off before the mode is read. Sharing the flag
+    /// parser with `chown` is what makes that true for both, and the
+    /// version that read `rest[0]` blindly reported `-h` as an invalid
+    /// mode, naming the wrong problem entirely.
+    #[test]
+    fn chmod_takes_h_before_its_mode() {
+        assert_eq!(
+            ok("chmod -h 644 link"),
+            Command::Chmod {
+                mode: 0o644,
+                paths: vec!["link".into()],
+                follow: false,
+            }
+        );
+    }
+
+    #[test]
+    fn chown_and_chgrp_are_one_command_with_two_faces() {
+        assert_eq!(
+            ok("chown 1000 f"),
+            Command::Chown {
+                id: 1000,
+                which: Owner::User,
+                paths: vec!["f".into()],
+                follow: true,
+            }
+        );
+        assert_eq!(
+            ok("chgrp -h 50 a b"),
+            Command::Chown {
+                id: 50,
+                which: Owner::Group,
+                paths: vec!["a".into(), "b".into()],
+                follow: false,
+            }
+        );
+    }
+
+    /// The protocol carries ids as numbers and offers no way to ask what
+    /// a name resolves to, so a name is refused with the reason rather
+    /// than sent as something it is not.
+    #[test]
+    fn chown_refuses_a_name() {
+        assert_eq!(parse("chown root f"), Err(ParseError::BadOwner("root".into())));
+        assert!(
+            ParseError::BadOwner("root".into())
+                .to_string()
+                .contains("numeric")
+        );
+        assert_eq!(parse("chown 1000"), Err(ParseError::MissingOperand("chown")));
+    }
+
+    /// `symlink` is `ln -s` spelled as a verb, the way `reget` is
+    /// `get -a`, and both collapse here so the executor has one path.
+    #[test]
+    fn symlink_is_ln_dash_s() {
+        assert_eq!(
+            ok("symlink /real /link"),
+            Command::Ln {
+                target: "/real".into(),
+                link: "/link".into(),
+                symbolic: true,
+            }
+        );
+        assert_eq!(
+            ok("ln -s /real /link"),
+            Command::Ln {
+                target: "/real".into(),
+                link: "/link".into(),
+                symbolic: true,
+            }
+        );
+        assert_eq!(
+            ok("ln /real /link"),
+            Command::Ln {
+                target: "/real".into(),
+                link: "/link".into(),
+                symbolic: false,
+            }
+        );
+        assert_eq!(parse("ln a"), Err(ParseError::MissingOperand("ln")));
+        assert_eq!(parse("ln a b c"), Err(ParseError::TooManyOperands("ln")));
+    }
+
+    #[test]
+    fn copy_and_cp_are_the_same_command() {
+        let expected = Command::Copy {
+            from: "a".into(),
+            to: "b".into(),
+        };
+        assert_eq!(ok("copy a b"), expected);
+        assert_eq!(ok("cp a b"), expected);
+        assert_eq!(parse("cp a"), Err(ParseError::MissingOperand("copy")));
+    }
+
+    #[test]
+    fn df_takes_its_two_flags_and_one_path() {
+        assert_eq!(
+            ok("df -hi /var"),
+            Command::Df {
+                path: Some("/var".into()),
+                human: true,
+                inodes: true,
+            }
+        );
+        assert_eq!(
+            ok("df"),
+            Command::Df {
+                path: None,
+                human: false,
+                inodes: false,
+            }
+        );
+        assert_eq!(
+            parse("df -z"),
+            Err(ParseError::UnknownFlag {
+                command: "df",
+                flag: 'z'
+            })
+        );
+    }
+
+    #[test]
+    fn lumask_reads_an_octal_mask() {
+        assert_eq!(ok("lumask 077"), Command::Lumask(0o077));
+        assert_eq!(ok("lumask 22"), Command::Lumask(0o022));
+        // A mask is three octal digits; anything wider is a typo that
+        // would otherwise be masked into something valid.
+        assert_eq!(parse("lumask 7777"), Err(ParseError::BadMode("7777".into())));
+        assert_eq!(parse("lumask 9"), Err(ParseError::BadMode("9".into())));
     }
 
     /// A decimal-looking mode is the classic mistake, and `999` is not

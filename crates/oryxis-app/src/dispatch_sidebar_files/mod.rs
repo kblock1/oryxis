@@ -521,6 +521,8 @@ mod tests {
             permissions: None,
             uid: None,
             gid: None,
+            owner: None,
+            group: None,
         }
     }
 
