@@ -38,11 +38,15 @@ pub enum LineEvent {
     /// Ctrl+D on an EMPTY line, which is how `sftp(1)` quits. On a
     /// non-empty line Ctrl+D deletes forward instead and no event fires.
     Eof,
-    /// Tab was pressed. The caller resolves candidates (a `list_dir` on
-    /// the remote) and feeds the answer back through
-    /// [`LineEditor::apply_completion`]. Carries the word under the
-    /// cursor, which is what gets completed.
-    CompleteRequested(String),
+    /// Tab was pressed. The caller locates the word with
+    /// [`super::complete::word_at`], resolves candidates for it and feeds
+    /// the answer back through [`LineEditor::apply_completion`].
+    ///
+    /// Carries the WHOLE line plus the cursor rather than the word,
+    /// because the word alone cannot say which namespace it lives in: the
+    /// verb decides that, and `put` completes against a directory `get`
+    /// never touches.
+    CompleteRequested { line: String, cursor: usize },
 }
 
 /// Where the escape-sequence decoder stands BETWEEN calls to `feed`.
@@ -229,10 +233,10 @@ impl LineEditor {
             // (0x7f on unix, 0x08 where the key encoder maps ^H), so both
             // are accepted rather than picking a side.
             0x08 | 0x7f => self.delete_back(out),
-            b'\t' => {
-                let word = self.word_under_cursor().to_string();
-                events.push(LineEvent::CompleteRequested(word));
-            }
+            b'\t' => events.push(LineEvent::CompleteRequested {
+                line: self.buf.clone(),
+                cursor: self.cursor,
+            }),
             // Ctrl+A / Ctrl+E: start and end of line.
             0x01 => {
                 self.cursor = 0;
@@ -452,26 +456,42 @@ impl LineEditor {
         }
     }
 
-    /// The word the cursor sits in, which is what Tab completes. Splits
-    /// on unquoted whitespace only, so `get "my file` completes against
-    /// `my file` rather than against `file`.
-    fn word_under_cursor(&self) -> &str {
-        let start = completion_word_start(&self.buf, self.cursor);
-        &self.buf[start..self.cursor]
-    }
-
     /// Install the caller's completion answer.
     ///
-    /// `common` replaces the word under the cursor. When exactly one
-    /// candidate matched, the caller appends its own trailing marker (a
-    /// `/` for a directory, a space otherwise) before calling; the editor
-    /// does not guess, because only the caller knows what the candidate
-    /// was.
-    pub fn apply_completion(&mut self, common: &str) -> Vec<u8> {
-        let start = completion_word_start(&self.buf, self.cursor);
-        self.buf.replace_range(start..self.cursor, common);
-        self.cursor = start + common.len();
+    /// `text` replaces the buffer from `start` to the cursor. The editor
+    /// does NOT locate that span itself: quoting decides where a word
+    /// begins (`get "my fi` is one word, not two), and the module that
+    /// knows the quoting rules is [`super::complete`], the same one that
+    /// built `text` under them. Splitting the two apart is how the
+    /// comment here once described a quote-aware word the code did not
+    /// have.
+    ///
+    /// The trailing marker (a separator for a directory, a space
+    /// otherwise, plus any closing quote) is part of `text` for the same
+    /// reason: only the caller knows what the candidate was.
+    pub fn apply_completion(&mut self, start: usize, text: &str) -> Vec<u8> {
+        let start = start.min(self.cursor);
+        self.buf.replace_range(start..self.cursor, text);
+        self.cursor = start + text.len();
         self.redraw()
+    }
+
+    /// Bytes that leave the cursor on a fresh row BELOW the whole line.
+    ///
+    /// Where output printed mid-edit has to start. A bare `\r\n` is not
+    /// enough: the line being edited may occupy several rows and the
+    /// cursor may be on any of them, so a newline from where it stands
+    /// would paint the output over the rest of the line.
+    pub fn break_below(&self) -> Vec<u8> {
+        let cols = self.cols as usize;
+        let end_row = (self.prompt_width() + self.buf.width()) / cols;
+        let cur_row = self.display_col() / cols;
+        let mut out = Vec::new();
+        if end_row > cur_row {
+            out.extend_from_slice(format!("\x1b[{}B", end_row - cur_row).as_bytes());
+        }
+        out.extend_from_slice(b"\r\n");
+        out
     }
 
     /// Repaint the prompt and the line, leaving the cursor where the
@@ -568,21 +588,6 @@ fn kill_word_start(s: &str, idx: usize) -> usize {
     let head = &s[..idx];
     let trimmed = head.trim_end_matches(' ');
     match trimmed.rfind(' ') {
-        Some(i) => i + 1,
-        None => 0,
-    }
-}
-
-/// Start of the word Tab completes: everything after the last space, with
-/// no skipping.
-///
-/// Deliberately NOT [`kill_word_start`], though the two look alike. On
-/// `get ` with the cursor at the end, the completion word is EMPTY (the
-/// user is asking what is here), while the kill word is `get ` (the user
-/// is asking to remove it). Sharing one helper made Tab on a trailing
-/// space try to complete against the verb.
-fn completion_word_start(s: &str, idx: usize) -> usize {
-    match s[..idx].rfind(' ') {
         Some(i) => i + 1,
         None => 0,
     }
@@ -838,22 +843,45 @@ mod tests {
         assert_eq!(submit(&mut ed, "pwd\n"), "pwd");
     }
 
+    /// The request carries the whole line, not the word: the verb is what
+    /// decides which namespace the word lives in, and it is not in the
+    /// word.
     #[test]
-    fn tab_asks_for_completion_of_the_word_under_the_cursor() {
+    fn tab_asks_for_completion_with_the_whole_line() {
         let mut ed = LineEditor::new("sftp> ", 80);
         ed.feed(b"get /var/lo");
         let evs = ed.feed(b"\t").1;
         assert_eq!(
             evs,
-            vec![LineEvent::CompleteRequested("/var/lo".to_string())]
+            vec![LineEvent::CompleteRequested {
+                line: "get /var/lo".to_string(),
+                cursor: 11,
+            }]
+        );
+    }
+
+    /// A Tab in the MIDDLE of a line completes what is behind the cursor
+    /// and leaves the rest where it is.
+    #[test]
+    fn tab_in_the_middle_reports_the_cursor_it_was_pressed_at() {
+        let mut ed = LineEditor::new("sftp> ", 80);
+        ed.feed(b"get ac.log");
+        ed.feed(b"\x1b[D\x1b[D\x1b[D\x1b[D");
+        let evs = ed.feed(b"\t").1;
+        assert_eq!(
+            evs,
+            vec![LineEvent::CompleteRequested {
+                line: "get ac.log".to_string(),
+                cursor: 6,
+            }]
         );
     }
 
     #[test]
-    fn completion_replaces_the_word_and_leaves_the_rest() {
+    fn completion_replaces_the_span_and_leaves_the_rest() {
         let mut ed = LineEditor::new("sftp> ", 80);
         ed.feed(b"get /var/lo");
-        ed.apply_completion("/var/log/");
+        ed.apply_completion(4, "/var/log/");
         assert_eq!(ed.buffer(), "get /var/log/");
     }
 
@@ -862,9 +890,36 @@ mod tests {
         let mut ed = LineEditor::new("sftp> ", 80);
         ed.feed(b"get ");
         let evs = ed.feed(b"\t").1;
-        assert_eq!(evs, vec![LineEvent::CompleteRequested(String::new())]);
-        ed.apply_completion("access.log");
-        assert_eq!(ed.buffer(), "get access.log");
+        assert_eq!(
+            evs,
+            vec![LineEvent::CompleteRequested {
+                line: "get ".to_string(),
+                cursor: 4,
+            }]
+        );
+        ed.apply_completion(4, "access.log ");
+        assert_eq!(ed.buffer(), "get access.log ");
+    }
+
+    /// Output printed mid-edit starts below the WHOLE line, not below the
+    /// row the cursor happens to be on. On a wrapped line the difference
+    /// is a candidate list painted over the second half of what the user
+    /// typed.
+    #[test]
+    fn breaking_below_clears_a_wrapped_line_first() {
+        let mut ed = LineEditor::new("sftp> ", 20);
+        // 30 characters against a 20-column window: two rows, cursor at
+        // the start of the first.
+        ed.feed(&[b'x'; 30]);
+        ed.feed(b"\x01");
+        let bytes = String::from_utf8(ed.break_below()).unwrap();
+        assert_eq!(bytes, "\x1b[1B\r\n");
+    }
+
+    #[test]
+    fn breaking_below_a_short_line_is_just_a_newline() {
+        let ed = LineEditor::new("sftp> ", 80);
+        assert_eq!(ed.break_below(), b"\r\n".to_vec());
     }
 
     /// A stray ESC that starts no sequence is swallowed. Printing it

@@ -296,15 +296,26 @@ fn long_listing(entries: &[&SftpEntry], human: bool, now: i64) -> String {
 /// Widths are display widths, so a listing of CJK names lines up instead
 /// of drifting one column per character.
 fn columnize(entries: &[&SftpEntry], cols: u16) -> String {
-    if entries.is_empty() {
+    let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+    columnize_names(&names, cols)
+}
+
+/// The same layout for a bare list of names, which is what a Tab showing
+/// its candidates paints.
+///
+/// One implementation on purpose: a candidate list laid out differently
+/// from the `ls` above it reads as a different kind of output, and the
+/// user is looking at both in the same scrollback.
+pub fn columnize_names(names: &[&str], cols: u16) -> String {
+    if names.is_empty() {
         return String::new();
     }
     const GAP: usize = 2;
     let width = cols.max(1) as usize;
-    let widest = entries.iter().map(|e| e.name.width()).max().unwrap_or(1);
+    let widest = names.iter().map(|n| n.width()).max().unwrap_or(1);
     let col_w = widest + GAP;
     let per_row = (width / col_w).max(1);
-    let rows = entries.len().div_ceil(per_row);
+    let rows = names.len().div_ceil(per_row);
 
     let mut out = String::new();
     for row in 0..rows {
@@ -312,14 +323,14 @@ fn columnize(entries: &[&SftpEntry], cols: u16) -> String {
         // does with an alphabetical listing.
         let mut line = String::new();
         for col in 0..per_row {
-            let Some(entry) = entries.get(col * rows + row) else {
+            let Some(name) = names.get(col * rows + row) else {
                 continue;
             };
-            let name_w = entry.name.width();
-            line.push_str(&entry.name);
+            let name_w = name.width();
+            line.push_str(name);
             // No padding after the last name on a row, so the line has no
             // invisible trailing run for a selection to pick up.
-            if col + 1 < per_row && (col + 1) * rows + row < entries.len() {
+            if col + 1 < per_row && (col + 1) * rows + row < names.len() {
                 line.push_str(&" ".repeat(col_w.saturating_sub(name_w)));
             }
         }

@@ -620,3 +620,142 @@ async fn console_quits_on_bye_and_reads_dead_before_silent() {
         "stream ended while the console still read as alive"
     );
 }
+
+/// Tab with several candidates and nothing left to share LISTS them.
+///
+/// The reported failure (issue #188): with `abcd.txt` and `abde.txt` in
+/// the directory, `ab` shares nothing beyond what was already typed, so
+/// the version that only ever inserted a common prefix repainted an
+/// identical line. From the outside that is a key that does nothing, and
+/// it was reported as one.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_tab_lists_candidates_that_share_no_more() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    let dir = std::env::temp_dir().join(format!("oryxis-tab-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::write(dir.join("abcd.txt"), b"one").expect("write abcd");
+    std::fs::write(dir.join("abde.txt"), b"two").expect("write abde");
+
+    console
+        .write(format!("lcd {}\r", dir.display()).as_bytes())
+        .expect("write");
+    console.write(b"put abcd.txt\r").expect("write");
+    expect_output(&mut out, "abcd.txt", Duration::from_secs(20)).await;
+    console.write(b"put abde.txt\r").expect("write");
+    expect_output(&mut out, "abde.txt", Duration::from_secs(20)).await;
+
+    // Remote side: both names must appear, and the line must come back.
+    console.write(b"get ab\t").expect("write");
+    let seen = expect_output(&mut out, "abde.txt", Duration::from_secs(10)).await;
+    assert!(seen.contains("abcd.txt"), "only one candidate listed:\n{seen}");
+    assert!(seen.contains("sftp> get ab"), "the line was not repainted:\n{seen}");
+
+    // One more character settles it, and then the word completes whole.
+    console.write(b"c\t").expect("write");
+    let seen = expect_output(&mut out, "abcd.txt", Duration::from_secs(10)).await;
+    assert!(
+        seen.contains("sftp> get abcd.txt "),
+        "a single candidate did not complete:\n{seen}"
+    );
+
+    console.write(&[0x03]).expect("write ctrl-c");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `put` completes against the LOCAL filesystem.
+///
+/// The other half of the report: every word went to `list_dir` on the
+/// server, so a local filename found no candidates and painted nothing.
+/// Tab read as unwired for the whole `put` / `mput` / `lcd` family.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_tab_completes_a_local_path_for_put() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    let dir = std::env::temp_dir().join(format!("oryxis-tab-local-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::write(dir.join("upload-me.txt"), b"local").expect("write source");
+
+    console
+        .write(format!("lcd {}\r", dir.display()).as_bytes())
+        .expect("write");
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    // Nothing on the SERVER is named this, which is exactly what makes
+    // the assertion meaningful: the candidate can only have come from
+    // the local directory.
+    console.write(b"put upl\t").expect("write");
+    let seen = expect_output(&mut out, "upload-me.txt", Duration::from_secs(10)).await;
+    assert!(
+        seen.contains("sftp> put upload-me.txt "),
+        "put did not complete locally:\n{seen}"
+    );
+
+    // And the completed line actually transfers, which is the property
+    // the quoting exists for.
+    console.write(b"\r").expect("write");
+    let seen = expect_output(&mut out, "upload-me.txt", Duration::from_secs(20)).await;
+    assert!(!seen.contains("No such file"), "the completed path was wrong:\n{seen}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The first word completes against the command vocabulary, which is how
+/// someone who has never used the console finds out what it can do.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_tab_completes_a_verb() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    console.write(b"prog\t").expect("write");
+    let seen = expect_output(&mut out, "progress", Duration::from_secs(10)).await;
+    assert!(seen.contains("sftp> progress "), "verb not completed:\n{seen}");
+
+    // It is a real line, not a decoration: Enter runs it.
+    console.write(b"\r").expect("write");
+    expect_output(&mut out, "Progress meter disabled", Duration::from_secs(10)).await;
+}
+
+/// A filename holding a glob character is an ordinary filename. Completing
+/// it has to produce a line the executor reads as a NAME, which is what
+/// the tokenizer's glob-escaping is for: unescaped, the transfer reported
+/// "no matches found" about a file that was plainly there.
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn console_transfers_a_file_whose_name_looks_like_a_pattern() {
+    let (console, mut out, _ssh, _container) = start_console().await;
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    let dir = std::env::temp_dir().join(format!("oryxis-tab-glob-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::write(dir.join("report[1].txt"), b"bracketed").expect("write source");
+
+    console
+        .write(format!("lcd {}\r", dir.display()).as_bytes())
+        .expect("write");
+    expect_output(&mut out, "sftp>", Duration::from_secs(10)).await;
+
+    console.write(b"put rep\t").expect("write");
+    let seen = expect_output(&mut out, "report", Duration::from_secs(10)).await;
+    assert!(
+        seen.contains(r"report\[1\].txt"),
+        "the brackets were not escaped into the line:\n{seen}"
+    );
+
+    console.write(b"\r").expect("write");
+    let seen = expect_output(&mut out, "report", Duration::from_secs(20)).await;
+    assert!(
+        !seen.contains("no matches found"),
+        "the name was read as a pattern:\n{seen}"
+    );
+
+    // And it really landed, under its real name.
+    console.write(b"ls -1\r").expect("write");
+    let seen = expect_output(&mut out, "report[1].txt", Duration::from_secs(10)).await;
+    assert!(seen.contains("report[1].txt"), "the upload did not arrive:\n{seen}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

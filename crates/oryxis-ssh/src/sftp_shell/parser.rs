@@ -154,6 +154,104 @@ impl std::fmt::Display for ParseError {
     }
 }
 
+/// Which namespace an operand names.
+///
+/// This is `sftp(1)`'s own REMOTE / LOCAL / NOARGS column, which exists
+/// there for exactly one consumer: completion. Without it a Tab has to
+/// guess, and the guess is wrong for half the vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArgSpace {
+    Remote,
+    Local,
+    /// Not a path: a mode, an owner id, a umask.
+    None,
+}
+
+/// One row of the command vocabulary.
+#[derive(Debug, Clone, Copy)]
+pub struct Verb {
+    pub name: &'static str,
+    /// One entry per operand it accepts, in order. Empty means the verb
+    /// takes none.
+    pub operands: &'static [ArgSpace],
+    /// Whether the LAST operand repeats. `rm a b c` is one command with
+    /// three of them; `cd a b` is a mistake, and a completion that
+    /// offered paths for the second would be helping the user build a
+    /// line the parser is about to reject.
+    pub variadic: bool,
+}
+
+/// Shorthand so the table below reads as a table.
+const fn verb(name: &'static str, operands: &'static [ArgSpace], variadic: bool) -> Verb {
+    Verb {
+        name,
+        operands,
+        variadic,
+    }
+}
+
+/// Every verb [`parse`] answers to, with the namespace of each operand.
+///
+/// **This table and [`parse`] are one change.** A verb in one and not the
+/// other is either a command nothing can complete or a completion for a
+/// command that does not exist, and both fail silently, which is why
+/// `the_table_and_the_parser_know_the_same_verbs` compares them in both
+/// directions.
+pub const VERBS: &[Verb] = &[
+    // Sorted by name, and `?` sorts first. It earns a row despite having
+    // nothing to complete because the invariant below is "the table and
+    // the parser know the same verbs", and an exception list is the thing
+    // that eventually grows a second entry nobody checks.
+    verb("?", &[], false),
+    verb("bye", &[], false),
+    verb("cd", &[ArgSpace::Remote], false),
+    verb("chdir", &[ArgSpace::Remote], false),
+    verb("chmod", &[ArgSpace::None, ArgSpace::Remote], true),
+    verb("delete", &[ArgSpace::Remote], true),
+    verb("dir", &[ArgSpace::Remote], false),
+    verb("exit", &[], false),
+    verb("get", &[ArgSpace::Remote, ArgSpace::Local], false),
+    verb("help", &[], false),
+    verb("lcd", &[ArgSpace::Local], false),
+    verb("lchdir", &[ArgSpace::Local], false),
+    verb("lls", &[ArgSpace::Local], false),
+    verb("lmkdir", &[ArgSpace::Local], false),
+    verb("lpwd", &[], false),
+    verb("ls", &[ArgSpace::Remote], false),
+    verb("mget", &[ArgSpace::Remote, ArgSpace::Local], false),
+    verb("mkdir", &[ArgSpace::Remote], false),
+    verb("mput", &[ArgSpace::Local, ArgSpace::Remote], false),
+    verb("progress", &[], false),
+    verb("put", &[ArgSpace::Local, ArgSpace::Remote], false),
+    verb("pwd", &[], false),
+    verb("quit", &[], false),
+    verb("reget", &[ArgSpace::Remote, ArgSpace::Local], false),
+    verb("rename", &[ArgSpace::Remote, ArgSpace::Remote], false),
+    verb("reput", &[ArgSpace::Local, ArgSpace::Remote], false),
+    verb("rm", &[ArgSpace::Remote], true),
+    verb("rmdir", &[ArgSpace::Remote], false),
+    verb("version", &[], false),
+];
+
+/// The namespace of `verb`'s `operand`-th operand, counting from 1.
+///
+/// `None` means there is nothing to complete: an unknown verb, a verb
+/// that takes no operands, or an operand past what it accepts. All three
+/// answer the same way because from a Tab's point of view they are the
+/// same situation.
+pub fn operand_space(verb: &str, operand: usize) -> Option<ArgSpace> {
+    let lower = verb.to_ascii_lowercase();
+    let row = VERBS.iter().find(|v| v.name == lower)?;
+    if operand == 0 {
+        return None;
+    }
+    match row.operands.get(operand - 1) {
+        Some(space) => Some(*space),
+        None if row.variadic => row.operands.last().copied(),
+        None => None,
+    }
+}
+
 /// Split a line into words, honouring quoting.
 ///
 /// The rules, which are `sftp(1)`'s:
@@ -165,6 +263,16 @@ impl std::fmt::Display for ParseError {
 /// An empty quoted string is a real, empty word: `put "" x` has two
 /// operands, not one, which is what lets the caller report the mistake
 /// instead of silently shifting arguments.
+///
+/// **The words come out GLOB-ESCAPED, not bare.** A character the user
+/// quoted or escaped is a literal, and the only way to say so to the pass
+/// that runs next is to hand it on still escaped: [`super::glob`] reads
+/// `\[` as a literal bracket, and [`super::exec`] drops the escapes at
+/// the moment an operand becomes a path. Unescaping here instead is what
+/// made `get "report[1].txt"` fail with "no matches found" about a file
+/// that was plainly there, because by the time the glob pass saw the name
+/// the quoting that said "literal" was gone. `sftp(1)` does the same
+/// thing in its own tokenizer, and for the same reason.
 pub fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
     let mut words = Vec::new();
     let mut cur = String::new();
@@ -181,7 +289,7 @@ pub fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
             }
             '\\' => match chars.next() {
                 Some(next) => {
-                    cur.push(next);
+                    push_literal(&mut cur, next);
                     has_word = true;
                 }
                 None => return Err(ParseError::UnterminatedQuote),
@@ -192,10 +300,10 @@ pub fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
                     match chars.next() {
                         Some('"') => break,
                         Some('\\') => match chars.next() {
-                            Some(next) => cur.push(next),
+                            Some(next) => push_literal(&mut cur, next),
                             None => return Err(ParseError::UnterminatedQuote),
                         },
-                        Some(other) => cur.push(other),
+                        Some(other) => push_literal(&mut cur, other),
                         None => return Err(ParseError::UnterminatedQuote),
                     }
                 }
@@ -205,12 +313,15 @@ pub fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
                 loop {
                     match chars.next() {
                         Some('\'') => break,
-                        Some(other) => cur.push(other),
+                        Some(other) => push_literal(&mut cur, other),
                         None => return Err(ParseError::UnterminatedQuote),
                     }
                 }
             }
             other => {
+                // Unquoted, so a metacharacter here IS a wildcard and
+                // travels bare. That asymmetry is the whole grammar:
+                // `get *.gz` globs and `get "*.gz"` does not.
                 cur.push(other);
                 has_word = true;
             }
@@ -222,6 +333,20 @@ pub fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
     Ok(words)
 }
 
+/// Append a character the user asked to be taken literally.
+///
+/// The backslash is kept for the glob metacharacters AND for the
+/// backslash itself. Keeping it for `\` is not tidiness: without it a
+/// literal backslash and an escape become the same byte, and the next
+/// pass cannot tell `a\*b` (a name with a star in it) from `a\b` followed
+/// by a wildcard.
+fn push_literal(cur: &mut String, c: char) {
+    if matches!(c, '\\' | '*' | '?' | '[' | ']') {
+        cur.push('\\');
+    }
+    cur.push(c);
+}
+
 /// Parse one submitted line.
 pub fn parse(line: &str) -> Result<Command, ParseError> {
     let words = tokenize(line)?;
@@ -231,8 +356,8 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
     let rest: Vec<&str> = rest.iter().map(String::as_str).collect();
 
     match verb.to_ascii_lowercase().as_str() {
-        "cd" => Ok(Command::Cd(one_optional(&rest, "cd")?)),
-        "lcd" => Ok(Command::Lcd(one_optional(&rest, "lcd")?)),
+        "cd" | "chdir" => Ok(Command::Cd(one_optional(&rest, "cd")?)),
+        "lcd" | "lchdir" => Ok(Command::Lcd(one_optional(&rest, "lcd")?)),
         "pwd" => Ok(Command::Pwd),
         "lpwd" => Ok(Command::Lpwd),
         "ls" | "dir" => Ok(Command::Ls(parse_ls(&rest, "ls")?)),
@@ -466,6 +591,43 @@ mod tests {
         assert_eq!(tokenize(r#"put "" x"#).unwrap(), vec!["put", "", "x"]);
     }
 
+    /// The asymmetry the whole grammar rests on: unquoted, a
+    /// metacharacter is a wildcard and travels bare; quoted, it is a
+    /// literal and travels still escaped, so the glob pass downstream can
+    /// tell which one it was looking at.
+    #[test]
+    fn a_quoted_glob_character_stays_escaped_and_an_unquoted_one_does_not() {
+        assert_eq!(tokenize("get *.gz").unwrap(), vec!["get", "*.gz"]);
+        assert_eq!(tokenize(r#"get "*.gz""#).unwrap(), vec!["get", r"\*.gz"]);
+        assert_eq!(tokenize("get '*.gz'").unwrap(), vec!["get", r"\*.gz"]);
+        assert_eq!(tokenize(r"get \*.gz").unwrap(), vec!["get", r"\*.gz"]);
+    }
+
+    /// The bug that made this the tokenizer's job: `report[1].txt` is an
+    /// ordinary filename, and a version that unescaped here handed the
+    /// glob pass a bracket it could only read as a class, so the transfer
+    /// reported "no matches found" about a file that was plainly there.
+    #[test]
+    fn a_quoted_bracket_is_not_a_pattern() {
+        let words = tokenize(r#"get "report[1].txt""#).unwrap();
+        assert_eq!(words[1], r"report\[1\].txt");
+        assert!(!super::super::glob::has_magic(&words[1]));
+        assert_eq!(
+            super::super::glob::unescape(&words[1]),
+            "report[1].txt",
+            "the escapes did not come back off"
+        );
+    }
+
+    /// A literal backslash keeps its own escape, which is what stops it
+    /// from being confused with the escape of the character after it.
+    #[test]
+    fn a_quoted_backslash_survives_next_to_a_quoted_wildcard() {
+        let words = tokenize(r"get 'a\*b'").unwrap();
+        assert!(!super::super::glob::has_magic(&words[1]));
+        assert_eq!(super::super::glob::unescape(&words[1]), r"a\*b");
+    }
+
     #[test]
     fn an_unterminated_quote_is_an_error() {
         assert_eq!(tokenize(r#"get "abc"#), Err(ParseError::UnterminatedQuote));
@@ -491,6 +653,79 @@ mod tests {
         );
         assert_eq!(ok("pwd"), Command::Pwd);
         assert_eq!(ok("lpwd"), Command::Lpwd);
+    }
+
+    /// The vocabulary lives in two places that nothing compiles together:
+    /// the [`VERBS`] table, which completion reads, and the match arms in
+    /// [`parse`]. A verb in one and not the other is either a command
+    /// nothing can complete or a completion for a command that does not
+    /// exist, and both fail silently. So they are compared in BOTH
+    /// directions.
+    #[test]
+    fn the_table_and_the_parser_know_the_same_verbs() {
+        for row in VERBS {
+            assert!(
+                !matches!(parse(row.name), Err(ParseError::UnknownCommand(_))),
+                "{} is in VERBS but the parser rejects it",
+                row.name
+            );
+        }
+        // The other direction has to be spelled out: a `match` cannot be
+        // iterated, and a table that silently lost a row is exactly what
+        // this exists to catch.
+        const PARSED: &[&str] = &[
+            "cd", "chdir", "lcd", "lchdir", "pwd", "lpwd", "ls", "dir", "lls", "get", "reget",
+            "mget", "put", "reput", "mput", "rm", "delete", "mkdir", "lmkdir", "rmdir", "rename",
+            "chmod", "progress", "help", "?", "version", "bye", "quit", "exit",
+        ];
+        for name in PARSED {
+            assert!(
+                VERBS.iter().any(|v| v.name == *name),
+                "the parser accepts {name} but VERBS has no row for it"
+            );
+        }
+        assert_eq!(
+            PARSED.len(),
+            VERBS.len(),
+            "VERBS has a row the parser does not accept"
+        );
+    }
+
+    /// The table is read by hand far more often than it is searched, so
+    /// it stays sorted.
+    #[test]
+    fn the_verb_table_is_sorted() {
+        assert!(VERBS.windows(2).all(|w| w[0].name < w[1].name));
+    }
+
+    #[test]
+    fn operand_namespaces_follow_the_verb() {
+        assert_eq!(operand_space("get", 1), Some(ArgSpace::Remote));
+        assert_eq!(operand_space("get", 2), Some(ArgSpace::Local));
+        assert_eq!(operand_space("put", 1), Some(ArgSpace::Local));
+        assert_eq!(operand_space("put", 2), Some(ArgSpace::Remote));
+        assert_eq!(operand_space("PUT", 1), Some(ArgSpace::Local));
+        assert_eq!(operand_space("chmod", 1), Some(ArgSpace::None));
+        assert_eq!(operand_space("chmod", 2), Some(ArgSpace::Remote));
+    }
+
+    /// Only a variadic verb keeps offering paths past its last declared
+    /// operand. `cd a b` is a mistake the parser will reject, and
+    /// completing the second operand would be helping build it.
+    #[test]
+    fn only_a_variadic_verb_repeats_its_last_operand() {
+        assert_eq!(operand_space("rm", 4), Some(ArgSpace::Remote));
+        assert_eq!(operand_space("chmod", 5), Some(ArgSpace::Remote));
+        assert_eq!(operand_space("cd", 2), None);
+        assert_eq!(operand_space("get", 3), None);
+        assert_eq!(operand_space("pwd", 1), None);
+        assert_eq!(operand_space("frobnicate", 1), None);
+    }
+
+    #[test]
+    fn chdir_and_lchdir_are_the_aliases_sftp_ships() {
+        assert_eq!(ok("chdir /tmp"), Command::Cd(Some("/tmp".into())));
+        assert_eq!(ok("lchdir /tmp"), Command::Lcd(Some("/tmp".into())));
     }
 
     #[test]

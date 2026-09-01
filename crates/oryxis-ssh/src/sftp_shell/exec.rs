@@ -209,7 +209,18 @@ pub async fn run(
 impl ShellState {
     /// Turn a user-typed remote path into an absolute one. Relative paths
     /// resolve against the working directory, `~` against the home.
-    fn resolve_remote(&self, path: &str) -> String {
+    ///
+    /// Visible to the module because completion resolves the SAME way a
+    /// command does: a Tab after `~/` that listed a different directory
+    /// than the `get` behind it would offer files the transfer then could
+    /// not find.
+    pub(super) fn resolve_remote(&self, path: &str) -> String {
+        // The operand arrives glob-escaped from the tokenizer, because
+        // the pass that decides what is a wildcard runs before this one.
+        // Here it stops being a pattern and becomes a PATH, which is
+        // exactly where the escapes come off, and the reason this is the
+        // funnel every remote operand goes through.
+        let path = &glob::unescape(path);
         if path == "~" {
             return self.remote_home.clone();
         }
@@ -224,7 +235,9 @@ impl ShellState {
 
     /// The local twin. `~` expands from the environment rather than from
     /// a session, because the local side has no session to ask.
-    fn resolve_local(&self, path: &str) -> PathBuf {
+    pub(super) fn resolve_local(&self, path: &str) -> PathBuf {
+        // Same funnel, same reason: see [`Self::resolve_remote`].
+        let path = &glob::unescape(path);
         if path == "~" {
             return local_home();
         }
@@ -843,6 +856,35 @@ mod tests {
         assert_eq!(s.resolve_remote("/etc/hosts"), "/etc/hosts");
         assert_eq!(s.resolve_remote("~"), "/home/deploy");
         assert_eq!(s.resolve_remote("~/.ssh"), "/home/deploy/.ssh");
+    }
+
+    /// The other end of the tokenizer's contract: an operand arrives
+    /// glob-escaped and stops being a pattern exactly here, which is why
+    /// this is the funnel every remote path goes through rather than a
+    /// call each command site has to remember.
+    #[test]
+    fn resolving_a_path_drops_the_glob_escaping() {
+        let mut s = state();
+        s.remote_cwd = "/var/log".into();
+        assert_eq!(s.resolve_remote(r"report\[1\].txt"), "/var/log/report[1].txt");
+        assert_eq!(s.resolve_remote(r"a\*b"), "/var/log/a*b");
+        assert_eq!(
+            s.resolve_local(r"report\[1\].txt"),
+            PathBuf::from("/tmp/report[1].txt")
+        );
+    }
+
+    /// A quoted wildcard names a file and is NOT expanded, while a bare
+    /// one still is. Measured through `has_magic`, which is what the
+    /// executor actually branches on.
+    #[test]
+    fn a_quoted_wildcard_is_a_name_and_a_bare_one_is_a_pattern() {
+        let quoted = &super::super::parser::tokenize(r#"get "*.gz""#).unwrap()[1];
+        let bare = &super::super::parser::tokenize("get *.gz").unwrap()[1];
+        assert!(!glob::has_magic(quoted));
+        assert!(glob::has_magic(bare));
+        let s = state();
+        assert_eq!(s.resolve_remote(quoted), "/home/deploy/*.gz");
     }
 
     #[test]

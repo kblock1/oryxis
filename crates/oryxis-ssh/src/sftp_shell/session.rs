@@ -16,6 +16,7 @@ use crate::engine::{SshError, SshSession};
 use crate::sftp::SftpClient;
 
 use super::PROMPT;
+use super::complete::{self, Completion, Space};
 use super::editor::{LineEditor, LineEvent};
 use super::exec::{self, Outcome, ShellState};
 use super::parser;
@@ -237,8 +238,9 @@ impl Repl {
                             // replaces it is a NEW prompt, so it goes
                             // out marked like every other one.
                             LineEvent::Interrupted => reprompt = true,
-                            LineEvent::CompleteRequested(word) => {
-                                let bytes = complete(&word, &client, &state, &mut editor).await;
+                            LineEvent::CompleteRequested { line, cursor } => {
+                                let bytes =
+                                    complete(&line, cursor, &client, &state, &mut editor).await;
                                 emit_bytes(&out, &bytes);
                             }
                         }
@@ -410,93 +412,108 @@ where
     }
 }
 
-/// Resolve a Tab completion against the remote directory.
+/// Resolve a Tab, and paint the answer.
 ///
-/// Returns the bytes to paint. A completion that matches nothing paints
-/// nothing, which is what every shell does: a bell or an error for a Tab
-/// that found no file would be noise on a key people press speculatively.
+/// The IO half of completion: locate the word, list the ONE directory its
+/// candidates can come from, and hand both to [`complete::plan`], which
+/// is where every decision is made and tested. A listing that fails
+/// paints nothing, and so does a word with nothing to say about it: a
+/// bell or an error for a key people press speculatively is noise.
 async fn complete(
-    word: &str,
+    line: &str,
+    cursor: usize,
     client: &SftpClient,
     state: &ShellState,
     editor: &mut LineEditor,
 ) -> Vec<u8> {
-    // Three cases, and the first version collapsed two of them: NO slash
-    // typed (complete against the working directory) is not the same as
-    // a slash typed with nothing before it (complete against the ROOT).
-    // Conflating them made `/var<Tab>` list the working directory and
-    // then replace the typed `/var` with a relative `var`, quietly
-    // corrupting the line the user was editing.
-    let (dir, prefix) = match word.rsplit_once('/') {
-        Some((dir, prefix)) => (Some(dir.to_string()), prefix.to_string()),
-        None => (None, word.to_string()),
+    let span = complete::word_at(line, cursor);
+    let sep = match span.space() {
+        Space::Local => complete::local_sep(&span.text),
+        _ => '/',
     };
-    let listing_dir = match dir.as_deref() {
-        None => state.remote_cwd.clone(),
-        Some("") => "/".to_string(),
-        Some(d) if d.starts_with('/') => d.to_string(),
-        Some(d) => format!("{}/{}", state.remote_cwd.trim_end_matches('/'), d),
-    };
-    let Ok(entries) = client.list_dir(&listing_dir).await else {
-        return Vec::new();
-    };
-    let matches: Vec<&crate::SftpEntry> = entries
-        .iter()
-        .filter(|e| e.name.starts_with(&prefix))
-        // A completion that has to be asked for by name is not a
-        // completion: dotfiles only appear once the user typed the dot.
-        .filter(|e| prefix.starts_with('.') || !e.name.starts_with('.'))
-        .collect();
+    let (dir, prefix) = complete::split_path(&span.text, sep);
+    let (dir, prefix) = (dir.map(str::to_string), prefix.to_string());
 
-    let Some(common) = common_prefix(matches.iter().map(|e| e.name.as_str())) else {
-        return Vec::new();
-    };
-    // One candidate completes fully, with the marker that says what it
-    // is: a `/` invites the next component, a space ends the word.
-    let completed = if matches.len() == 1 {
-        let only = matches[0];
-        let sep = if only.is_dir { "/" } else { " " };
-        format!("{}{sep}", rebuild(dir.as_deref(), &only.name))
-    } else {
-        rebuild(dir.as_deref(), &common)
-    };
-    editor.apply_completion(&completed)
-}
-
-/// Put a completed name back under the directory the user had typed, so
-/// `get /var/lo<Tab>` becomes `/var/log/` rather than `log/`.
-/// `None` means no slash was typed, so the name stands alone.
-/// `Some("")` means a leading slash and nothing else, so the name
-/// belongs under the ROOT: returning it bare there would turn an
-/// absolute path the user typed into a relative one.
-fn rebuild(dir: Option<&str>, name: &str) -> String {
-    match dir {
-        None => name.to_string(),
-        Some("") => format!("/{name}"),
-        Some(d) => format!("{d}/{name}"),
-    }
-}
-
-/// The longest prefix every candidate shares, or `None` when there are
-/// no candidates. Compares by CHARACTER, so a shared multi-byte prefix
-/// is not cut mid-character.
-fn common_prefix<'a>(mut names: impl Iterator<Item = &'a str>) -> Option<String> {
-    let first = names.next()?;
-    let mut common: Vec<char> = first.chars().collect();
-    for name in names {
-        let mut shared = 0;
-        for (a, b) in common.iter().zip(name.chars()) {
-            if *a != b {
-                break;
-            }
-            shared += 1;
+    let mut candidates = match span.space() {
+        Space::Nothing => return Vec::new(),
+        // The verb takes no directory at all, which is why the vocabulary
+        // is the one candidate source that cannot fail.
+        Space::Verb => complete::verb_candidates(&span.text),
+        Space::Remote => {
+            // NO separator typed (complete against the working directory)
+            // is not the same as a separator typed with nothing before it
+            // (complete against the ROOT). Conflating them made `/var`
+            // list the working directory and then replace the typed
+            // `/var` with a relative `var`.
+            let listing = match dir.as_deref() {
+                None => state.remote_cwd.clone(),
+                Some("") => "/".to_string(),
+                Some(d) => state.resolve_remote(d),
+            };
+            let Ok(entries) = client.list_dir(&listing).await else {
+                return Vec::new();
+            };
+            entries
+                .iter()
+                .map(|e| complete::Candidate {
+                    name: e.name.clone(),
+                    is_dir: e.is_dir,
+                })
+                .collect()
         }
-        common.truncate(shared);
-        if common.is_empty() {
-            break;
+        Space::Local => {
+            let listing = match dir.as_deref() {
+                None => state.local_cwd.clone(),
+                Some("") => PathBuf::from(sep.to_string()),
+                Some(d) => state.resolve_local(d),
+            };
+            let Ok(entries) = local_candidates(&listing).await else {
+                return Vec::new();
+            };
+            entries
+        }
+    };
+    // The server answers in its own order and a directory read answers in
+    // the filesystem's; a candidate list is read by eye, so it is sorted.
+    candidates.sort_by(|a, b| a.name.cmp(&b.name));
+
+    match complete::plan(&prefix, dir.as_deref(), sep, span.quote, &candidates) {
+        Completion::Nothing => Vec::new(),
+        Completion::Insert(text) => editor.apply_completion(span.start, &text),
+        // The line does not change, so it is REPAINTED rather than
+        // reprompted: `redraw_fresh` because the list left the cursor on
+        // a clean row with nothing above it to walk back over, and no
+        // OSC 133 marks because this is the same prompt, not a new one.
+        Completion::List(names) => {
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            let mut out = editor.break_below();
+            out.extend_from_slice(render::columnize_names(&names, state.cols).as_bytes());
+            out.extend_from_slice(&editor.redraw_fresh());
+            out
         }
     }
-    Some(common.into_iter().collect())
+}
+
+/// List a local directory as completion candidates.
+///
+/// A symlink is followed to decide `is_dir`, so a link to a directory
+/// invites the next component the way the directory itself would. A
+/// broken one falls back to "not a directory", which is the honest answer
+/// and costs nothing: the name still completes.
+async fn local_candidates(dir: &std::path::Path) -> std::io::Result<Vec<complete::Candidate>> {
+    let mut out = Vec::new();
+    let mut read = tokio::fs::read_dir(dir).await?;
+    while let Some(entry) = read.next_entry().await? {
+        let is_dir = tokio::fs::metadata(entry.path())
+            .await
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
+        out.push(complete::Candidate {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            is_dir,
+        });
+    }
+    Ok(out)
 }
 
 fn emit(out: &mpsc::UnboundedSender<Vec<u8>>, text: &str) {
@@ -513,46 +530,6 @@ fn emit_bytes(out: &mpsc::UnboundedSender<Vec<u8>>, bytes: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn common_prefix_of_one_is_itself() {
-        assert_eq!(
-            common_prefix(["access.log"].into_iter()),
-            Some("access.log".to_string())
-        );
-    }
-
-    #[test]
-    fn common_prefix_stops_at_the_first_difference() {
-        assert_eq!(
-            common_prefix(["access.log", "access.log.1", "access.old"].into_iter()),
-            Some("access.".to_string())
-        );
-    }
-
-    #[test]
-    fn common_prefix_of_nothing_is_none() {
-        assert_eq!(common_prefix(std::iter::empty()), None);
-    }
-
-    #[test]
-    fn common_prefix_can_be_empty_when_nothing_is_shared() {
-        assert_eq!(
-            common_prefix(["alpha", "beta"].into_iter()),
-            Some(String::new())
-        );
-    }
-
-    /// Comparing by character rather than by byte is what keeps a shared
-    /// multi-byte prefix from being cut in half, which would produce a
-    /// completion that is not valid UTF-8 at all.
-    #[test]
-    fn common_prefix_does_not_cut_a_character_in_half() {
-        assert_eq!(
-            common_prefix(["文档a", "文档b"].into_iter()),
-            Some("文档".to_string())
-        );
-    }
 
     /// The property the console lives or dies by, tested against a
     /// command that never finishes so the result cannot depend on who
@@ -707,18 +684,35 @@ mod tests {
         assert_eq!(outcome, None);
     }
 
-    #[test]
-    fn rebuild_puts_the_name_back_under_its_directory() {
-        assert_eq!(rebuild(Some("/var/lo"), "log"), "/var/lo/log");
-        assert_eq!(rebuild(None, "access.log"), "access.log");
+    /// A local Tab lists the LOCAL directory, which is the half that was
+    /// missing: every word went to `list_dir` on the server, so a `put`
+    /// looking for a file on this machine found nothing and painted
+    /// nothing. No server is needed to prove it, only a directory.
+    #[tokio::test]
+    async fn a_local_word_takes_its_candidates_from_the_filesystem() {
+        let dir = std::env::temp_dir().join(format!("oryxis-complete-{}", std::process::id()));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+        tokio::fs::create_dir_all(dir.join("sub")).await.unwrap();
+        tokio::fs::write(dir.join("alpha.txt"), b"x").await.unwrap();
+
+        let mut found = local_candidates(&dir).await.unwrap();
+        found.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(
+            found,
+            vec![
+                complete::Candidate::file("alpha.txt"),
+                complete::Candidate::dir("sub"),
+            ]
+        );
+        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
-    /// A leading slash with nothing before it is the ROOT, not "no
-    /// directory". Confusing the two replaced the `/var` the user had
-    /// typed with a relative `var`.
-    #[test]
-    fn rebuild_keeps_an_absolute_path_absolute() {
-        assert_eq!(rebuild(Some(""), "var"), "/var");
-        assert_ne!(rebuild(Some(""), "var"), rebuild(None, "var"));
+    /// A directory that cannot be read is not an error to report: the
+    /// user pressed a key speculatively and the answer is that there is
+    /// nothing to say.
+    #[tokio::test]
+    async fn an_unreadable_local_directory_yields_no_candidates() {
+        let missing = std::env::temp_dir().join("oryxis-complete-does-not-exist");
+        assert!(local_candidates(&missing).await.is_err());
     }
 }

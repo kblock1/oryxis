@@ -158,6 +158,29 @@ pub fn has_magic(pattern: &str) -> bool {
     false
 }
 
+/// Drop one level of backslash escaping, turning a glob-escaped operand
+/// back into the name it stands for.
+///
+/// The inverse of what [`super::parser::tokenize`] emits, and the last
+/// step before an operand becomes a PATH. A trailing backslash has
+/// nothing to escape and stands for itself, which is what keeps the
+/// function total.
+pub fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some(next) => out.push(next),
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Split a path into components, keeping track of whether it was
 /// absolute. Empty components (from `//` or a trailing `/`) are dropped,
 /// matching how the caller joins them back.

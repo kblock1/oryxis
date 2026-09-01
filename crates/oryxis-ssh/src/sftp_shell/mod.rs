@@ -15,13 +15,16 @@
 //!
 //! - [`editor`] turns keystrokes into echo bytes and line events;
 //! - [`parser`] turns a submitted line into a [`parser::Command`];
+//! - [`complete`] turns a Tab into an insertion, a candidate list or
+//!   nothing;
 //! - [`glob`] expands `*` / `?` / `[...]` over names already listed;
 //! - [`render`] formats listings, sizes and the progress meter.
 //!
-//! Those four are pure and carry the bulk of the tests. The session that
+//! Those five are pure and carry the bulk of the tests. The session that
 //! drives them against a live [`crate::sftp::SftpClient`] is the only
 //! part that needs a server.
 
+pub mod complete;
 pub mod editor;
 pub mod exec;
 pub mod glob;
@@ -29,9 +32,10 @@ pub mod parser;
 pub mod render;
 pub mod session;
 
+pub use complete::{Candidate, Completion, Quote, Space, WordSpan};
 pub use editor::{LineEditor, LineEvent};
 pub use exec::{Outcome, ShellState};
-pub use parser::{Command, LsOpts, ParseError, XferOpts};
+pub use parser::{ArgSpace, Command, LsOpts, ParseError, Verb, XferOpts};
 pub use session::SftpShellSession;
 
 /// The prompt, matching `sftp(1)` so anything copied from a tutorial
