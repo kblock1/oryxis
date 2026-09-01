@@ -64,6 +64,17 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag }}
     steps:
+      # The only thing this job needs from the repository is the purge
+      # helper, so it takes that directory and nothing else: everything
+      # published here comes from the release's own assets, which is why
+      # the rest of the job has never checked anything out. It runs first
+      # because a checkout cleans the directory it lands in, and by the
+      # time the assets are downloaded there is something there to lose.
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
       - name: Download release assets
         run: |
           set -euo pipefail
