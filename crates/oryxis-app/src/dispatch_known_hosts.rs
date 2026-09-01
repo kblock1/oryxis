@@ -15,11 +15,13 @@ impl Oryxis {
         match message {
             // -- Known hosts --
             KnownHostMessage::RequestDeleteKnownHost(idx) => {
-                let label = self
-                    .known_hosts
-                    .get(idx)
-                    .map(|kh| format!("{}:{}", kh.hostname, kh.port))
-                    .unwrap_or_default();
+                // Resolve the row to an id NOW, while the index is the
+                // one the user clicked; the dialog it arms outlives that
+                // certainty (see `KnownHostMessage::DeleteKnownHost`).
+                let Some(kh) = self.known_hosts.get(idx) else {
+                    return Task::none();
+                };
+                let (id, label) = (kh.id, format!("{}:{}", kh.hostname, kh.port));
                 self.error_dialog = Some(crate::state::ErrorDialog {
                     title: crate::i18n::t("known_host_remove_confirm_title").to_string(),
                     body: format!(
@@ -29,18 +31,19 @@ impl Oryxis {
                     link: None,
                     action: Some(crate::state::ErrorDialogAction {
                         label: crate::i18n::t("remove").to_string(),
-                        message: Box::new(Message::KnownHost(KnownHostMessage::DeleteKnownHost(idx))),
+                        message: Box::new(Message::KnownHost(KnownHostMessage::DeleteKnownHost(id))),
                         danger: true,
                     }),
                 });
             }
-            KnownHostMessage::DeleteKnownHost(idx) => {
-                if let Some(kh) = self.known_hosts.get(idx) {
-                    let id = kh.id;
-                    if let Some(vault) = &self.vault {
-                        let _ = vault.delete_known_host(&id);
-                        self.load_data_from_vault();
-                    }
+            KnownHostMessage::DeleteKnownHost(id) => {
+                // An id that no longer exists is an entry that left while
+                // the question was on screen: the DELETE matches nothing
+                // and the reload is what the user would have asked for
+                // anyway.
+                if let Some(vault) = &self.vault {
+                    let _ = vault.delete_known_host(&id);
+                    self.load_data_from_vault();
                 }
             }
             KnownHostMessage::RequestClearAllKnownHosts => {
