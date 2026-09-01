@@ -26,7 +26,15 @@ pub(crate) enum OverlayContent {
     /// Kebab menu on a port-forward rule card. Items: Edit and Delete.
     PortForwardActions(usize),
     KeychainAdd,
-    TabActions(usize),
+    /// Right-click menu on a terminal tab chip. Keyed by tab id, not
+    /// index: the menu is an overlay, not a modal, so async updates
+    /// keep flowing while it is open, and the 30 s auto-reconnect tick
+    /// can remove + re-append a disconnected tab (the legacy rebuild
+    /// path): a frozen index would silently aim Close / Rename /
+    /// Duplicate at whatever neighbour slid into its slot (same rule
+    /// `TreeHostActions` and `PendingSftpClose::HybridSession` already
+    /// follow).
+    TabActions(uuid::Uuid),
     /// Right-click menu on an SFTP browser tab. Items: New SFTP tab,
     /// Pin/Unpin, Close. `usize` is the `sftp_tabs` index.
     SftpTabActions(usize),

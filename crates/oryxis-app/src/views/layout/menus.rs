@@ -353,7 +353,16 @@ impl Oryxis {
             OverlayContent::SidebarFilesBackground { dir } => {
                 self.build_menu_sidebar_files_background(dir.clone())
             }
-            OverlayContent::TabActions(idx) => self.build_menu_tab_actions(*idx),
+            // Resolved per frame: the menu is an overlay, so a tab can
+            // legitimately vanish under it (auto-reconnect's remove +
+            // rebuild) and the items must bake the position THIS frame
+            // draws. The empty arm is belt and suspenders:
+            // `reconcile_overlay_tab_target` drops the overlay in the
+            // same update the tab leaves, so it never renders.
+            OverlayContent::TabActions(id) => match self.tab_index_by_id(*id) {
+                Some(idx) => self.build_menu_tab_actions(idx),
+                None => column![].into(),
+            },
             OverlayContent::SftpTabActions(idx) => self.build_menu_sftp_tab_actions(*idx),
             OverlayContent::SplitMenu => self.build_menu_split(),
             OverlayContent::TabBarActions => self.build_menu_tab_bar_actions(),

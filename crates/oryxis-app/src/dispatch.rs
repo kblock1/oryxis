@@ -157,6 +157,10 @@ impl Oryxis {
         // tabs after every message: new tabs appended, closed ones dropped,
         // drag-reordered order preserved.
         self.reconcile_tab_order();
+        // A tab context menu is keyed by tab id; drop the popover when
+        // that tab left in this update, so the menu never outlives what
+        // it acts on.
+        self.reconcile_overlay_tab_target();
         // Repair the hybrid-tab SFTP ownership invariant: drop a dangling
         // owner (tab removed by a path that bypasses CloseTab) and hoist
         // an active Files-mode tab that some direct `active_tab = ...`

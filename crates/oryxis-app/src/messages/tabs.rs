@@ -17,8 +17,12 @@ pub enum TabsMessage {
     /// user asked for.
     CloseTabFromStrip(usize),
     /// Second step of closing a GROUPED tab: the confirmation said yes,
-    /// so tear it down without asking again (issue #112).
-    ConfirmCloseGroupedTab(usize),
+    /// so tear it down without asking again (issue #112). Carries the
+    /// tab's id, not its position: the modal can sit open across an
+    /// auto-reconnect (a remove + rebuild), which shifts every index
+    /// after the reconnected tab, and a cached position would close a
+    /// different tab than the one the user just confirmed.
+    ConfirmCloseGroupedTab(Uuid),
     /// Bring back the last closed tab (issue #186), terminal or SFTP.
     /// Pops `Oryxis::closed_tabs` and reopens it through the same spec
     /// resolution a dormant pinned tab uses.

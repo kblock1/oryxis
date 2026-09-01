@@ -84,6 +84,27 @@ impl Oryxis {
         }
     }
 
+    /// Close a tab context menu whose tab is gone.
+    ///
+    /// `OverlayContent::TabActions` names its tab by id, so a tab that
+    /// vanishes under the open menu leaves the overlay pointing at
+    /// nothing. Tabs are removed from several paths that never reach
+    /// `close_tab_now` (the reconnect rebuild, a cancelled or retried
+    /// connect, a cloud tab swap), so this sits beside
+    /// `reconcile_tab_order` at the end of every `update` rather than in
+    /// a teardown helper no removal path is obliged to call.
+    pub(crate) fn reconcile_overlay_tab_target(&mut self) {
+        let stale = match self.overlay.as_ref().map(|o| &o.content) {
+            Some(crate::state::OverlayContent::TabActions(id)) => {
+                self.tab_index_by_id(*id).is_none()
+            }
+            _ => false,
+        };
+        if stale {
+            self.overlay = None;
+        }
+    }
+
     /// Give a just-born tab its strip slot: at the end like every other
     /// tab, unless a Duplicate armed a [`crate::state::PendingTabPlacement`]
     /// for it.

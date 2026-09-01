@@ -21,7 +21,18 @@ impl Oryxis {
                 self.hover.tab_close_click_at = Some(std::time::Instant::now());
                 return self.handle_close_tab(idx);
             }
-            TabsMessage::ConfirmCloseGroupedTab(idx) => return self.close_tab_now(idx),
+            // Resolve the dialog's tab id to an index NOW, at execution:
+            // the modal can sit open across async updates (an
+            // auto-reconnect's remove + rebuild shifts indices), so the
+            // id is the only reference that survives. An id that no
+            // longer resolves is a tab that closed itself while the
+            // question was on screen: nothing to confirm.
+            TabsMessage::ConfirmCloseGroupedTab(id) => {
+                return match self.tab_index_by_id(id) {
+                    Some(idx) => self.close_tab_now(idx),
+                    None => Task::none(),
+                };
+            }
             TabsMessage::ReopenClosedTab => return self.handle_reopen_closed_tab(),
             TabsMessage::CloseOtherTabs(idx) => {
                 self.overlay = None;
@@ -135,9 +146,19 @@ impl Oryxis {
                 );
             }
             TabsMessage::ShowTabMenu(idx) => {
+                // The anchor is a one-shot: take it before the guard
+                // below, or a keyboard-placed anchor would stay armed
+                // and land the NEXT menu where this one was asked for.
                 let anchor = self.keynav_take_menu_anchor();
+                // Store the tab's id, not the index: the menu outlives
+                // the frame that opened it, and the auto-reconnect tick
+                // can remove + re-append a tab while it is up (see
+                // `OverlayContent::TabActions`).
+                let Some(tab_id) = self.tabs.get(idx).map(|t| t._id) else {
+                    return Task::none();
+                };
                 self.overlay = Some(OverlayState {
-                    content: OverlayContent::TabActions(idx),
+                    content: OverlayContent::TabActions(tab_id),
                     x: anchor.0,
                     y: anchor.1,
                 });
