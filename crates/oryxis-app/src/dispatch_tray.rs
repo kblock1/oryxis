@@ -382,12 +382,7 @@ impl Oryxis {
                     .discard();
             }
             TrayMessage::Quit => {
-                tracing::info!("tray: quit requested");
-                // The window may have been shown and resized/maximized
-                // since the hide-to-tray persisted geometry; write the
-                // final state before exiting.
-                self.persist_window_geometry();
-                return iced::exit();
+                return self.tray_quit_now();
             }
             TrayMessage::ActivateSession(idx) => {
                 // Show first (window may be hidden) then re-emit
@@ -413,6 +408,21 @@ impl Oryxis {
             }
         }
         Task::none()
+    }
+
+    /// The tray's exit door. With close-to-tray on it is the app's ONLY
+    /// exit verb (the close verb hides instead), which is why it takes
+    /// the same teardown the close path does rather than a shorter one
+    /// of its own: it used to persist the geometry and nothing else, so
+    /// the tail of every recorded session and a half-typed host-editor
+    /// form died with the process.
+    fn tray_quit_now(&mut self) -> Task<Message> {
+        tracing::info!("tray: quit requested");
+        // The window may have been shown and resized / maximized since
+        // the hide-to-tray persisted geometry, so this writes the final
+        // state along with the two flushes.
+        self.persist_before_exit();
+        self.drain_plugins_before_exit().then(|_| iced::exit())
     }
 
     /// Rebuild the Windows taskbar JumpList's recent-hosts category when

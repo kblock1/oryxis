@@ -283,15 +283,25 @@ impl Oryxis {
                             self.update_error = Some(e);
                         } else {
                             // Installer launched (or new binary spawned),
-                            // exit so the old binary is released. Graceful
-                            // quit via window close.
+                            // exit so the old binary is released.
                             self.pending_update = None;
-                            // The updated binary should reopen with
-                            // today's geometry.
-                            self.persist_window_geometry();
-                            return iced::window::latest().then(|id_opt| match id_opt {
-                                Some(id) => iced::window::close(id),
-                                None => Task::none(),
+                            // This is an exit door of its own, NOT the
+                            // close path: `window::close` is the
+                            // programmatic action, which removes the
+                            // window directly instead of raising the
+                            // `CloseRequested` the close subscription
+                            // listens for, so nothing here passes
+                            // through `handle_window_close`. It takes
+                            // the same teardown by calling it, which
+                            // also puts the flushes ahead of an
+                            // installer that is already up and waiting
+                            // for this process to go.
+                            self.persist_before_exit();
+                            return self.drain_plugins_before_exit().then(|_| {
+                                iced::window::latest().then(|id_opt| match id_opt {
+                                    Some(id) => iced::window::close(id),
+                                    None => Task::none(),
+                                })
                             });
                         }
                     }

@@ -1,6 +1,70 @@
-use crate::app::Oryxis;
+use iced::Task;
+
+use crate::app::{Message, Oryxis};
 
 impl Oryxis {
+    /// Everything that must reach disk before this window goes away, on
+    /// EVERY door that takes it away: the close verb (a real close and
+    /// hide-to-tray both), the tray's Quit, the update restart and the
+    /// renderer relaunch. ONE list, because four doors each carrying
+    /// their own copy is how three of them drifted: the tray's Quit and
+    /// both restart paths persisted the geometry and nothing else, so
+    /// the tail of every recorded session and a half-typed host-editor
+    /// form died with the process. Only the close verb was complete,
+    /// and it is the one door close-to-tray takes away.
+    ///
+    /// Synchronous on purpose. The renderer relaunch exits through
+    /// `std::process::exit`, which can neither await a `Task` nor run a
+    /// destructor, so anything that only works as a task is a step that
+    /// door cannot take (see `drain_plugins_before_exit`).
+    pub(crate) fn persist_before_exit(&mut self) {
+        // Buffered session-log output, trailing partial lines included:
+        // the recording is going away with the pane, so there is no
+        // later flush to carry the remainder.
+        self.flush_session_logs_final();
+        // A host-editor auto-save still inside its debounce window must
+        // not die with the process. Interrupted: the window going away
+        // concluded nothing about a half-typed Parent Group name, so it
+        // must not become a vault group.
+        self.editor_flush_interrupted();
+        // Remember size + maximized/fullscreen for the next launch (also
+        // on hide-to-tray: a later tray Quit exits without passing
+        // through the close path again).
+        self.persist_window_geometry();
+    }
+
+    /// Gracefully drain the plugin subprocesses (flush logs / close SDK
+    /// clients on stdin EOF) so they aren't hard-killed with the app.
+    /// Providers drain in parallel and the whole thing is time-bounded,
+    /// so a wedged plugin can't hold the app open. The caller chains its
+    /// own exit verb onto the returned task (`window::close` for the
+    /// close and update doors, `iced::exit()` for the tray's Quit).
+    ///
+    /// Three doors of the four; the renderer relaunch is the exception
+    /// and cannot be fixed by calling this. It leaves through
+    /// `std::process::exit`, so there is no runtime left to await the
+    /// drain, and blocking the UI thread on it would stall the frame
+    /// that is about to spawn the replacement process. The subprocesses
+    /// still see their stdin close when the parent goes, which is the
+    /// same EOF this asks for, minus the wait.
+    pub(crate) fn drain_plugins_before_exit(&self) -> Task<Message> {
+        let providers: Vec<std::sync::Arc<crate::plugins::PluginProvider>> =
+            self.plugin_providers.values().cloned().collect();
+        Task::perform(
+            async move {
+                let drain = futures_util::future::join_all(
+                    providers.iter().map(|p| p.shutdown()),
+                );
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(2000),
+                    drain,
+                )
+                .await;
+            },
+            |_: ()| Message::NoOp,
+        )
+    }
+
     /// Best-effort persist a key/value pair to the vault. Logs failures
     /// instead of bubbling them up so a flaky disk doesn't take the
     /// whole settings panel down, the worst case is the user has to
@@ -15,11 +79,11 @@ impl Oryxis {
 
     /// Persist the window geometry (last windowed size + outer position +
     /// the maximized / fullscreen flags) so the next launch reopens the
-    /// window exactly as the user left it, on the same monitor. Called
-    /// from every exit path (window close, tray quit, update restart,
-    /// renderer relaunch), on the maximize / fullscreen toggles and on
-    /// focus loss as a crash-safe checkpoint. Plaintext settings rows,
-    /// so this works while the vault is locked.
+    /// window exactly as the user left it, on the same monitor. Every
+    /// exit path reaches it through `persist_before_exit` above; it is
+    /// also called on its own on the maximize / fullscreen toggles and
+    /// on focus loss, as a crash-safe checkpoint. Plaintext settings
+    /// rows, so this works while the vault is locked.
     pub(crate) fn persist_window_geometry(&self) {
         let w = self.window_windowed_size.width.round() as u32;
         let h = self.window_windowed_size.height.round() as u32;

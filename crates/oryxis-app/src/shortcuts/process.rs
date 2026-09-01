@@ -80,10 +80,18 @@ impl Oryxis {
     /// Never returns on success (`process::exit`). On a spawn failure it
     /// returns so the caller stays running rather than stranding the user
     /// with no window.
-    pub(crate) fn relaunch_self(&self) {
-        // The replacement process should come back with today's window
-        // geometry, and this one exits without passing through the
-        // normal close path.
+    ///
+    /// The one exit door that cannot drain the plugin subprocesses:
+    /// `process::exit` leaves no runtime to await the drain on. See
+    /// `drain_plugins_before_exit`.
+    pub(crate) fn relaunch_self(&mut self) {
+        // Geometry BEFORE the spawn, on its own, and it is not a
+        // duplicate of the `persist_before_exit` below: the replacement
+        // reads the window settings in the first lines of `main`, well
+        // before the `--relaunch` mutex wait that lets this process
+        // finish, so a geometry written after the spawn is a race the
+        // child loses. Same crash-safe checkpoint the maximize and
+        // focus-loss paths take, for the same reason.
         self.persist_window_geometry();
         let exe = match std::env::current_exe() {
             Ok(p) => p,
@@ -115,6 +123,13 @@ impl Oryxis {
                     let _ = writeln!(stdin, "{}", pw);
                     drop(stdin);
                 }
+                // The point of no return, and the last place anything
+                // can be written: `process::exit` runs no destructor
+                // and this door never passes through the close path.
+                // AFTER the spawn on purpose. A failed spawn leaves the
+                // app running, and a "final" flush on a live pane would
+                // hand the recording a tail in the middle of itself.
+                self.persist_before_exit();
                 // Hand off cleanly: the child is up, drop this process so
                 // the mutex releases and the child promotes to primary.
                 std::process::exit(0);

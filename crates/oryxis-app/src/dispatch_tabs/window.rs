@@ -463,18 +463,12 @@ impl Oryxis {
     }
 
     pub(super) fn handle_window_close(&mut self) -> Task<Message> {
-        // Persist any buffered session-log output before the
-        // window goes away (real close or hide-to-tray both).
-        self.flush_session_logs_final();
-        // A host-editor auto-save still inside its debounce window
-        // must not die with the process. Interrupted: closing the
-        // window concluded nothing about a half-typed Parent Group
-        // name, so it must not become a vault group.
-        self.editor_flush_interrupted();
-        // Remember size + maximized/fullscreen for the next
-        // launch (also on hide-to-tray: a later tray Quit exits
-        // without passing through here again).
-        self.persist_window_geometry();
+        // The session-log tail, a debouncing host-editor save and the
+        // window geometry: the shared list every door that takes the
+        // window away runs. Before the branch below, because
+        // hide-to-tray needs it too (a later tray Quit exits without
+        // passing through here again).
+        self.persist_before_exit();
         // Honour the close-to-tray setting: when on, the
         // user's "close" verb (custom title bar X, Alt+F4
         // via CloseRequested subscription, etc.) hides the
@@ -497,27 +491,9 @@ impl Oryxis {
                 })
                 .discard();
         }
-        // Real close (not tray-hide): gracefully drain the plugin
-        // subprocesses (flush logs / close SDK clients on stdin EOF)
-        // before the window closes and the process exits. Providers
-        // drain in parallel; the whole thing is time-bounded so a
-        // wedged plugin can't hold the app open.
-        let providers: Vec<std::sync::Arc<crate::plugins::PluginProvider>> =
-            self.plugin_providers.values().cloned().collect();
-        Task::perform(
-            async move {
-                let drain = futures_util::future::join_all(
-                    providers.iter().map(|p| p.shutdown()),
-                );
-                let _ = tokio::time::timeout(
-                    std::time::Duration::from_millis(2000),
-                    drain,
-                )
-                .await;
-            },
-            |_: ()| Message::NoOp,
-        )
-        .then(|_| {
+        // Real close (not tray-hide): let the plugin subprocesses flush
+        // before the window closes and the process exits.
+        self.drain_plugins_before_exit().then(|_| {
             iced::window::latest().then(|id_opt| match id_opt {
                 Some(id) => iced::window::close(id),
                 None => Task::none(),
