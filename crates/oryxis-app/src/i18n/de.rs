@@ -202,6 +202,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Bereiche wiederherstellen",
         "hotkey_toggle_maximize_pane" => "Bereich maximieren / wiederherstellen",
         "close_pane" => "Bereich schließen",
+        "pane_to_new_tab" => "In neuen Tab verschieben",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Als Gruppe speichern",
         "edit_session_group" => "Gruppe bearbeiten",

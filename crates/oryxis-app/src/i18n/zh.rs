@@ -202,6 +202,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "还原窗格",
         "hotkey_toggle_maximize_pane" => "最大化 / 还原窗格",
         "close_pane" => "关闭窗格",
+        "pane_to_new_tab" => "移至新标签页",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "保存为组",
         "edit_session_group" => "编辑组",

@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Przywróć panele",
         "hotkey_toggle_maximize_pane" => "Maksymalizuj / przywróć panel",
         "close_pane" => "Zamknij panel",
+        "pane_to_new_tab" => "Przenieś do nowej karty",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Zapisz jako grupę",
         "edit_session_group" => "Edytuj grupę",

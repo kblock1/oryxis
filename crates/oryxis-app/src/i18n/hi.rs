@@ -206,6 +206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "पैनल पुनर्स्थापित करें",
         "hotkey_toggle_maximize_pane" => "पैनल बड़ा करें / पुनर्स्थापित करें",
         "close_pane" => "पेन बंद करें",
+        "pane_to_new_tab" => "नए टैब में ले जाएँ",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "ग्रुप के रूप में सेव करें",
         "edit_session_group" => "ग्रुप एडिट करें",

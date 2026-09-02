@@ -206,6 +206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Επαναφορά τμημάτων",
         "hotkey_toggle_maximize_pane" => "Μεγιστοποίηση / επαναφορά τμήματος",
         "close_pane" => "Κλείσιμο τμήματος",
+        "pane_to_new_tab" => "Μετακίνηση σε νέα καρτέλα",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Αποθήκευση ως ομάδα",
         "edit_session_group" => "Επεξεργασία ομάδας",

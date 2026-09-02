@@ -414,3 +414,92 @@ fn every_pane_end_action_has_its_own_label() {
         }
     }
 }
+
+/// Breaking a pane out is a MOVE, so the pane arrives whole: the same
+/// session-log row, the same origin, the same terminal. A close would
+/// end all three, and the difference between the two paths is the whole
+/// point of issue #208 item 4.
+#[test]
+fn a_pane_broken_out_keeps_what_it_owns() {
+    use crate::state::{LocalShellSpec, PaneOrigin, TerminalTab};
+
+    let terminal = std::sync::Arc::new(std::sync::Mutex::new(
+        oryxis_terminal::TerminalState::new_no_pty(80, 24).expect("terminal"),
+    ));
+    let mut pane = crate::state::Pane::new("host-b".to_string(), terminal);
+    let log_id = uuid::Uuid::new_v4();
+    let pane_id = pane.id;
+    pane.session_log_id = Some(log_id);
+    pane.origin = PaneOrigin::Local(LocalShellSpec {
+        label: "PowerShell".into(),
+        program: "powershell.exe".into(),
+        args: Vec::new(),
+    });
+
+    let tab = TerminalTab::adopting(pane);
+    assert_eq!(tab.pane_count(), 1);
+    let landed = tab.active();
+    assert_eq!(landed.id, pane_id, "the pane was rebuilt instead of moved");
+    assert_eq!(
+        landed.session_log_id,
+        Some(log_id),
+        "the recording was ended or restarted",
+    );
+    assert!(
+        matches!(landed.origin, PaneOrigin::Local(_)),
+        "the pane forgot what it reconnects to",
+    );
+    // The new tab is named by the pane, the way an unsplit tab always is.
+    assert_eq!(tab.label, "host-b");
+    // Everything the SOURCE tab owned stays with the source.
+    assert!(!tab.pinned, "a pin followed a pane out of its tab");
+    assert!(tab.relaunch.is_none(), "a relaunch spec followed a pane out");
+    assert!(tab.session_group_id.is_none(), "group membership followed a pane out");
+    assert!(!tab.broadcast, "broadcast followed a pane into a tab of one");
+}
+
+/// What a tab owes when a pane LEAVES it, whichever way it left. Closing
+/// and moving share `take_pane` precisely so these three cannot drift
+/// apart, and each of them was its own bug once.
+#[test]
+fn a_tab_settles_when_a_pane_leaves_it() {
+    use crate::state::TerminalTab;
+
+    fn pane(label: &str) -> crate::state::Pane {
+        crate::state::Pane::new(
+            label.to_string(),
+            std::sync::Arc::new(std::sync::Mutex::new(
+                oryxis_terminal::TerminalState::new_no_pty(80, 24).expect("terminal"),
+            )),
+        )
+    }
+
+    let mut tab = TerminalTab::adopting(pane("first"));
+    let first = tab.focused;
+    let (second, _) = tab
+        .pane_grid
+        .split(iced::widget::pane_grid::Axis::Vertical, first, pane("second"))
+        .expect("split");
+    // Armed while it was a split, which is the only time it can be.
+    tab.broadcast = true;
+    tab.focused = second;
+    assert!(tab.broadcast_capable());
+
+    // The FOCUSED pane leaves.
+    let taken = tab.take_pane(second).expect("the pane");
+    assert_eq!(taken.label, "second");
+    assert_eq!(tab.focused, first, "focus did not follow to the survivor");
+    assert!(!tab.broadcast, "broadcast stayed armed on a tab that cannot show it");
+    assert_eq!(tab.label, "first", "the tab kept the name of the pane that left");
+
+    // A background pane leaving must NOT move the keyboard.
+    let mut tab = TerminalTab::adopting(pane("first"));
+    let first = tab.focused;
+    let (second, _) = tab
+        .pane_grid
+        .split(iced::widget::pane_grid::Axis::Vertical, first, pane("second"))
+        .expect("split");
+    tab.focused = first;
+    let _ = tab.take_pane(second);
+    assert_eq!(tab.focused, first, "closing a background pane yanked the keyboard");
+}

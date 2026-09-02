@@ -1214,6 +1214,16 @@ impl Oryxis {
                     OryxisColors::t().text_secondary,
                 ));
             }
+            // Break this pane out into a tab of its own (issue #208
+            // item 4). Above Close because it is the non-destructive
+            // half of the same idea, "this pane should not be here":
+            // one keeps the session, the other ends it.
+            items = items.push(self.menu_item(
+                iced_fonts::lucide::external_link(),
+                crate::i18n::t("pane_to_new_tab"),
+                Message::Terminal(TerminalMessage::MovePaneToNewTab(pane_id)),
+                OryxisColors::t().text_secondary,
+            ));
             items = items.push(self.menu_item(
                 iced_fonts::lucide::x(),
                 crate::i18n::t("close_pane"),

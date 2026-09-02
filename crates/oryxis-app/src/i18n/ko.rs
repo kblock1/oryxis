@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "창 복원",
         "hotkey_toggle_maximize_pane" => "창 최대화 / 복원",
         "close_pane" => "분할 창 닫기",
+        "pane_to_new_tab" => "새 탭으로 이동",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "그룹으로 저장",
         "edit_session_group" => "그룹 편집",

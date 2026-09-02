@@ -202,6 +202,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "ペインを元に戻す",
         "hotkey_toggle_maximize_pane" => "ペインの最大化 / 復元",
         "close_pane" => "ペインを閉じる",
+        "pane_to_new_tab" => "新しいタブへ移動",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "グループとして保存",
         "edit_session_group" => "グループを編集",

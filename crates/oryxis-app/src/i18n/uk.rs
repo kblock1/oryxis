@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Відновити панелі",
         "hotkey_toggle_maximize_pane" => "Розгорнути / відновити панель",
         "close_pane" => "Закрити панель",
+        "pane_to_new_tab" => "Перемістити в нову вкладку",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Зберегти як групу",
         "edit_session_group" => "Редагувати групу",

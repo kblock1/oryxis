@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Pulihkan panel",
         "hotkey_toggle_maximize_pane" => "Maksimalkan / pulihkan panel",
         "close_pane" => "Tutup panel",
+        "pane_to_new_tab" => "Pindahkan ke tab baru",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Simpan sebagai grup",
         "edit_session_group" => "Edit grup",

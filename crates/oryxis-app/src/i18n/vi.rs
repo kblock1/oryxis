@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Khôi phục các khung",
         "hotkey_toggle_maximize_pane" => "Phóng to / khôi phục khung",
         "close_pane" => "Đóng khung",
+        "pane_to_new_tab" => "Chuyển sang thẻ mới",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Lưu thành nhóm",
         "edit_session_group" => "Sửa nhóm",

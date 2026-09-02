@@ -509,7 +509,26 @@ impl TerminalTab {
     /// Build a new tab with a single pane. Split it later via
     /// `pane_grid.split(...)`.
     pub fn new_single(label: String, terminal: Arc<Mutex<TerminalState>>) -> Self {
-        let (pane_grid, focused) = pane_grid::State::new(Pane::new(label.clone(), terminal));
+        Self::adopting(Pane::new(label, terminal))
+    }
+
+    /// A tab built around a pane that ALREADY EXISTS, for one broken out
+    /// of a split (issue #208 item 4).
+    ///
+    /// The pane arrives whole: its session, its recording, its scrollback
+    /// and its origin all travel, because nothing about it is ending. The
+    /// tab takes the pane's own label, which is what `new_single` names a
+    /// fresh tab after too, so a pane that read "user@host" in the grid
+    /// reads "user@host" on its own chip.
+    ///
+    /// Everything a tab owns that the pane does not is deliberately
+    /// default: the chat, the pin, the reopen spec and the session-group
+    /// membership belong to the tab the pane LEFT, not to the pane. The
+    /// one exception is decided by the caller, which carries
+    /// `ssm_keepalive` over when the source had it.
+    pub fn adopting(pane: Pane) -> Self {
+        let label = pane.label.clone();
+        let (pane_grid, focused) = pane_grid::State::new(pane);
         Self {
             _id: Uuid::new_v4(),
             label,
@@ -925,6 +944,39 @@ impl TerminalTab {
             return name;
         }
         self.auto_label(auto_title)
+    }
+
+    /// Take a pane OUT of this tab, alive, and leave the tab consistent.
+    ///
+    /// The three repairs a shrinking grid owes, in one place because a
+    /// pane can now leave two ways: closed (`ClosePane`) or moved to
+    /// another tab (issue #208 item 4). Both owe exactly this, and only
+    /// the caller's own bookkeeping differs.
+    ///
+    /// - focus moves to the promoted sibling, but only if the pane that
+    ///   left was the focused one; closing a background pane must not
+    ///   yank the keyboard.
+    /// - broadcast disarms once the tab is no longer capable of it. Its
+    ///   controls are hidden on an unsplit tab, so an armed state left
+    ///   behind would be invisible and still fan keystrokes out.
+    /// - the label re-anchors on the survivor, because an unsplit tab is
+    ///   named by the TAB and it was named after whichever pane it was
+    ///   created for (issue #108).
+    ///
+    /// Returns the pane, or `None` if the handle names nothing.
+    pub fn take_pane(&mut self, handle: pane_grid::Pane) -> Option<Pane> {
+        let (pane, sibling) = self.pane_grid.close(handle)?;
+        if self.focused == handle {
+            self.focused = sibling;
+        }
+        if !self.broadcast_capable() && self.broadcast {
+            self.broadcast = false;
+            for pane in self.pane_grid.panes.values_mut() {
+                pane.broadcast_opt_out = false;
+            }
+        }
+        self.sync_label_to_sole_pane();
+        Some(pane)
     }
 
     /// Re-anchor the tab's own label on the pane that is left when a

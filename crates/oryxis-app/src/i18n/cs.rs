@@ -206,6 +206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Obnovit panely",
         "hotkey_toggle_maximize_pane" => "Maximalizovat / obnovit panel",
         "close_pane" => "Zavřít panel",
+        "pane_to_new_tab" => "Přesunout na novou kartu",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Uložit jako skupinu",
         "edit_session_group" => "Upravit skupinu",

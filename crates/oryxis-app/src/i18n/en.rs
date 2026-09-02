@@ -206,6 +206,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "restore_panes" => "Restore panes",
         "hotkey_toggle_maximize_pane" => "Maximize / restore pane",
         "close_pane" => "Close pane",
+        "pane_to_new_tab" => "Move to a new tab",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Save as group",
         "edit_session_group" => "Edit group",

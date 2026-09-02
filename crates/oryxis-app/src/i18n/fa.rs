@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "بازگرداندن پنل‌ها",
         "hotkey_toggle_maximize_pane" => "بزرگ‌نمایی / بازگرداندن پنل",
         "close_pane" => "بستن پنل",
+        "pane_to_new_tab" => "انتقال به زبانه جدید",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "ذخیره به‌عنوان گروه",
         "edit_session_group" => "ویرایش گروه",

@@ -206,6 +206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "คืนค่าบานหน้าต่าง",
         "hotkey_toggle_maximize_pane" => "ขยาย / คืนค่าบานหน้าต่าง",
         "close_pane" => "ปิดเพน",
+        "pane_to_new_tab" => "ย้ายไปแท็บใหม่",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "บันทึกเป็นกลุ่ม",
         "edit_session_group" => "แก้ไขกลุ่ม",

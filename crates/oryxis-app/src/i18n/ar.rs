@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "استعادة الأجزاء",
         "hotkey_toggle_maximize_pane" => "تكبير / استعادة الجزء",
         "close_pane" => "إغلاق اللوحة",
+        "pane_to_new_tab" => "نقل إلى علامة تبويب جديدة",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "حفظ كمجموعة",
         "edit_session_group" => "تعديل المجموعة",

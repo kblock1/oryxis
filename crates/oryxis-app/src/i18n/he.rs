@@ -206,6 +206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "שחזר חלוניות",
         "hotkey_toggle_maximize_pane" => "הגדל / שחזר חלונית",
         "close_pane" => "סגירת חלונית",
+        "pane_to_new_tab" => "העברה ללשונית חדשה",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "שמירה כקבוצה",
         "edit_session_group" => "עריכת קבוצה",

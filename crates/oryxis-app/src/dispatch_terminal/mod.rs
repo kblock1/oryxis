@@ -372,28 +372,13 @@ impl Oryxis {
                         _ => None,
                     };
                 }
-                if let Some((_closed, sibling)) = tab.pane_grid.close(target) {
-                    // Only a close of the focused pane moves focus;
-                    // closing a background pane from its context menu
-                    // must not yank the keyboard to its sibling.
-                    if tab.focused == target {
-                        tab.focused = sibling;
-                    }
-                }
-                // Back to a single pane: disarm broadcast (its control
-                // surfaces are hidden for unsplit tabs, so a lingering
-                // armed state would be invisible) and drop the survivor's
-                // opt-out so a later re-arm starts clean.
-                if !tab.broadcast_capable() && tab.broadcast {
-                    tab.broadcast = false;
-                    for pane in tab.pane_grid.panes.values_mut() {
-                        pane.broadcast_opt_out = false;
-                    }
-                }
-                // A collapsed split has to re-anchor the tab on the pane
-                // that is left: the unsplit label comes from the TAB, which
-                // was named after the pane that just closed (issue #108).
-                tab.sync_label_to_sole_pane();
+                // Take the pane out and let the tab settle: focus onto the
+                // promoted sibling if the closed one held it, broadcast
+                // disarmed once the tab can no longer do it, and the label
+                // re-anchored on the survivor (issue #108). The same three
+                // repairs a pane MOVED to another tab owes, which is why
+                // they live on the tab rather than here.
+                let _ = tab.take_pane(target);
                 if let Some(log_id) = ended_log
                     && let Some(vault) = &self.vault
                 {
@@ -510,6 +495,68 @@ impl Oryxis {
                     let handle = *handle;
                     tab.flip_split_at(handle);
                 }
+            }
+            TerminalMessage::MovePaneToNewTab(pane_id) => {
+                self.overlay = None;
+                let Some(src_idx) = self.pane_tab_index(pane_id) else {
+                    return Task::none();
+                };
+                let Some(src) = self.tabs.get(src_idx) else {
+                    return Task::none();
+                };
+                // A lone pane is already a tab of its own. The menu row
+                // is only offered on a split, so this is the overlay
+                // racing a close rather than a reachable choice.
+                if src.pane_count() <= 1 {
+                    return Task::none();
+                }
+                let Some((&handle, _)) =
+                    src.pane_grid.panes.iter().find(|(_, p)| p.id == pane_id)
+                else {
+                    return Task::none();
+                };
+                let keepalive = src.ssm_keepalive;
+                // The pane's recorded output is flushed while its own tab
+                // still owns the log bookkeeping. Nothing is ENDING here,
+                // so the log id travels with the pane and keeps writing
+                // to the same row from its new tab.
+                self.flush_session_logs_final();
+                let Some(pane) = self.tabs[src_idx].take_pane(handle) else {
+                    return Task::none();
+                };
+                // Everything a close would do to the session is exactly
+                // what must NOT happen: no `session.close()`, no ended
+                // log, no `monitor_reset_host`, no `prune_quick_connects`.
+                // The pane is moving, not dying, and it carries all of
+                // that with it.
+                let mut tab = crate::state::TerminalTab::adopting(pane);
+                // An SSM / ECS session stays alive by being nudged on a
+                // timer, and the flag is per TAB, so a pane leaving a
+                // keepalive tab would quietly start idling out. Same
+                // carry `merge_dragged_tab_if_proposed` makes in the
+                // opposite direction.
+                tab.ssm_keepalive = keepalive;
+                // Beside the tab it came from, not at the far end of the
+                // strip: the pane was on screen a moment ago and the eye
+                // should not have to hunt for where it went.
+                //
+                // Armed rather than spliced. `Oryxis::tabs` is append-only
+                // by design, so that no `active_tab` / `last_terminal_tab`
+                // / `connecting.tab_idx` index goes stale; the strip's
+                // order is `tab_order`, and `place_new_tab_ref` is the one
+                // door every new tab walks through to get its slot.
+                let source_id = self.tabs[src_idx]._id;
+                self.pending_tab_placement = Some(crate::state::PendingTabPlacement {
+                    source_id,
+                    placement: crate::state::TabPlacement::NextToOriginal,
+                    armed_at: std::time::Instant::now(),
+                });
+                let dest_idx = self.tabs.len();
+                self.tabs.push(tab);
+                self.active_tab = Some(dest_idx);
+                self.remember_terminal_tab_focus(dest_idx);
+                self.active_view = crate::state::View::Terminal;
+                return self.tab_scroll_to_active();
             }
             TerminalMessage::TerminalBellFlashEnd(pane_id) => {
                 if let Some(pane) = self

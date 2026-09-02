@@ -202,6 +202,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Ripristina riquadri",
         "hotkey_toggle_maximize_pane" => "Ingrandisci / ripristina riquadro",
         "close_pane" => "Chiudi riquadro",
+        "pane_to_new_tab" => "Sposta in una nuova scheda",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Salva come gruppo",
         "edit_session_group" => "Modifica gruppo",

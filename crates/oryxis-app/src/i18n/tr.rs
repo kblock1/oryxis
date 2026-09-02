@@ -203,6 +203,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "restore_panes" => "Bölmeleri geri yükle",
         "hotkey_toggle_maximize_pane" => "Bölmeyi büyüt / geri yükle",
         "close_pane" => "Bölmeyi kapat",
+        "pane_to_new_tab" => "Yeni sekmeye taşı",
         // Session groups (saved split-panel arrangements)
         "save_session_group" => "Grup olarak kaydet",
         "edit_session_group" => "Grubu düzenle",
