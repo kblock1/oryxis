@@ -58,7 +58,14 @@ settle
 # #143 polish shortened the section above, and 2227 -> 2334 when the two
 # link rows (confirm + callback tunnel) joined the behaviour card, and
 # 2334 -> 2368 when the close-a-live-session confirm row joined the
-# block above this one.
+# block above this one, and 2368 -> 2420 when the per-pane header row
+# and its hint joined Split panes.
+#
+# Build the binary you measure with into a target dir of your OWN.
+# Sessions share this repo's `target/`, so a `debug/oryxis` sitting
+# there can have been relinked by something else since you built it,
+# and measuring against a stale one reads the layout you are trying to
+# change. It looks exactly like a pass.
 #
 # Measure it from a SCREENSHOT of a batch run, never from the
 # `--harness-serve` daemon: the daemon does not read this file's
@@ -71,7 +78,7 @@ settle
 # failure, so three earlier stale tests hid it. Read the row back
 # with `find "Capture command history"` and use label_y + 8 rather
 # than guessing a delta.
-click (1340, 2368)
+click (1340, 2420)
 settle
 absent "Copy shell integration snippet"
 absent "Rotate key"
