@@ -44,8 +44,16 @@ pub enum TrayMessage {
     /// only the tray icon present.
     Hide,
     /// User clicked "Quit" in the tray menu. Tear down the tray
-    /// icon and exit the process.
+    /// icon and exit the process. Guarded: when the live-session
+    /// confirm pref is on and some tab still holds a session, this
+    /// asks first (the tray's Quit is the only exit verb once the
+    /// window is hidden to the tray, so a mis-click there drops
+    /// everything exactly like a mis-click on a tab's X).
     Quit,
+    /// Second step of the tray "Quit" guard: the confirmation said
+    /// yes, so exit without asking again. Only the dialog can
+    /// produce this message.
+    ConfirmQuit,
     /// User clicked an entry in the tray menu's "Active sessions"
     /// section. Payload is the tab index from `Oryxis::tabs`. The
     /// handler shows the window (in case it was hidden) and selects

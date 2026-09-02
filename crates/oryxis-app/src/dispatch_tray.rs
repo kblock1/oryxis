@@ -382,6 +382,36 @@ impl Oryxis {
                     .discard();
             }
             TrayMessage::Quit => {
+                // The same opt-in guard the tab closes and the window's
+                // X use. The tray menu is the only exit verb once the
+                // window is hidden to the tray, so leaving it unguarded
+                // would let the path that always drops every live
+                // session skip the very protection the user asked for.
+                if self.prefs.confirm_close_session_tab {
+                    let live = self.live_session_tab_count();
+                    if live > 0 {
+                        // Show the window first: a dialog on a hidden
+                        // window is invisible, and a user who then
+                        // kills the process from Task Manager loses
+                        // the sessions unasked anyway.
+                        self.overlay = None;
+                        self.error_dialog = Some(crate::state::ErrorDialog {
+                            title: crate::i18n::t("close_window_title").to_string(),
+                            body: crate::i18n::t("close_window_body")
+                                .replacen("{n}", &live.to_string(), 1),
+                            link: None,
+                            action: Some(crate::state::ErrorDialogAction {
+                                label: crate::i18n::t("close_window_confirm").to_string(),
+                                message: Box::new(Message::Tray(TrayMessage::ConfirmQuit)),
+                                danger: true,
+                            }),
+                        });
+                        return Task::done(Message::Tray(TrayMessage::Show));
+                    }
+                }
+                return self.tray_quit_now();
+            }
+            TrayMessage::ConfirmQuit => {
                 return self.tray_quit_now();
             }
             TrayMessage::ActivateSession(idx) => {
@@ -410,12 +440,16 @@ impl Oryxis {
         Task::none()
     }
 
-    /// The tray's exit door. With close-to-tray on it is the app's ONLY
-    /// exit verb (the close verb hides instead), which is why it takes
-    /// the same teardown the close path does rather than a shorter one
-    /// of its own: it used to persist the geometry and nothing else, so
-    /// the tail of every recorded session and a half-typed host-editor
-    /// form died with the process.
+    /// The tray's exit itself, with no prompt. Reached directly when
+    /// the live-session guard is off or nothing was live, and from
+    /// `ConfirmQuit` once the ask is answered.
+    ///
+    /// With close-to-tray on this is the app's ONLY exit verb (the
+    /// close verb hides instead), which is why it takes the same
+    /// teardown the close path does rather than a shorter one of its
+    /// own: it used to persist the geometry and nothing else, so the
+    /// tail of every recorded session and a half-typed host-editor form
+    /// died with the process.
     fn tray_quit_now(&mut self) -> Task<Message> {
         tracing::info!("tray: quit requested");
         // The window may have been shown and resized / maximized since

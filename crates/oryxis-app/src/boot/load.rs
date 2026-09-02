@@ -582,6 +582,9 @@ impl Oryxis {
             {
                 self.prefs.smart_long_secs = n;
             }
+            if let Ok(Some(v)) = vault.get_setting("confirm_close_session_tab") {
+                self.prefs.confirm_close_session_tab = v == "true";
+            }
             // Apply the OSC 52 gate to the terminal backend (process-wide).
             let (cw, cr) = self.prefs.clipboard_access.flags();
             oryxis_terminal::set_clipboard_access(cw, cr);

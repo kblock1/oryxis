@@ -187,6 +187,13 @@ pub(crate) struct AppPrefs {
     /// notification; `0` turns the finished half off (activity detection
     /// stays). Persisted as `smart_tabs_long_seconds`; default 10.
     pub(crate) smart_long_secs: u32,
+    /// Ask before closing a tab that holds a LIVE session (SSH /
+    /// telnet / mosh / serial / cloud), so a misplaced click on the
+    /// strip's X cannot silently drop a connection. Off by default,
+    /// matching the common SSH-client behavior of closing straight
+    /// through; the multi-pane group confirm is independent of this.
+    /// Persisted as `confirm_close_session_tab`.
+    pub(crate) confirm_close_session_tab: bool,
     /// Toggles the bottom status bar that shows current connection IP +
     /// Oryxis version. Off in `view_main` simply skips rendering it,
     /// reclaiming the row for the active content area.
@@ -606,6 +613,7 @@ impl Default for AppPrefs {
             notification_mode: crate::util::NotificationMode::default(),
             smart_tabs: true,
             smart_long_secs: 10,
+            confirm_close_session_tab: false,
             show_status_bar: true,
             status_show_version: true,
             status_show_connection: true,

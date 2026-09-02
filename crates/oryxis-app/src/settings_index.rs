@@ -138,6 +138,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Terminal, "terminal_notification", "notification osc 9 desktop toast"),
     e(S::Terminal, "smart_tabs", "smart tabs long command detection rename"),
     e(S::Terminal, "smart_tabs_threshold", "long command threshold alert duration seconds"),
+    e(S::Terminal, "confirm_close_session_tab", "confirm close session tab window quit exit ssh disconnect guard accidental ask before closing live session"),
     e(S::Terminal, "sidebar_tab_locations", "sidebar left right dock position side region tabs location"),
     e(S::Terminal, "tab_tip_hosts", "hosts tree sidebar left right location dock"),
     e(S::Terminal, "sidebar_auto_open", "sidebar auto open connect show"),

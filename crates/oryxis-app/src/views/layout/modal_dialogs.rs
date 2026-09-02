@@ -834,30 +834,42 @@ impl Oryxis {
     /// value is cloned by the caller, matching the original branch.
     pub(crate) fn build_error_dialog(&self, dialog: crate::state::ErrorDialog) -> Element<'_, Message> {
         // Keyboard: Close and the optional link/action are recorded
-        // rows; the action button (when present) is the default so
-        // a bare Enter runs it, matching the desktop convention for
-        // a dialog that IS the confirmation step.
+        // rows, and WHICH ONE Enter runs depends on what the action is.
+        //
+        // A RECOVERY action ("Install", "Restart now", "Open the
+        // folder") is the default, so a bare Enter runs it: the dialog
+        // IS the confirmation step and that is the desktop convention.
+        //
+        // A DANGEROUS one inverts it, and the reason is the reason the
+        // confirmation exists at all. Every one of these guards was
+        // asked for because a single stray gesture on a small target
+        // destroyed something (the close X on a tab chip, #112 and
+        // #204). Enter on a popup nobody has read yet is that same
+        // gesture with a different finger, so a guard that accepts it
+        // as the answer hands back exactly what it was built to keep.
+        // The refusing row keeps the default instead, the way
+        // `Modal::HostKey` and `Modal::ProxyCommand` already do for the
+        // two dial prompts. Esc refuses on every path either way.
         self.modal_nav_reset();
         use crate::keynav::RowAction;
         // A dialog carrying a DANGEROUS action is a confirmation, not a
         // report, so its negative button says Cancel. "Close" beside
         // "Close group" (or "Close" beside "Remove") reads as a second
         // way to do the thing, which is the opposite of what it does.
-        let dismiss_key = match &dialog.action {
-            Some(a) if a.danger => "cancel",
-            _ => "close",
+        let danger = dialog.action.as_ref().is_some_and(|a| a.danger);
+        let dismiss_key = if danger { "cancel" } else { "close" };
+        let dismiss = RowAction::activate(Message::ErrorDialogDismiss);
+        let dismiss_el = styled_button(
+            crate::i18n::t(dismiss_key),
+            Message::ErrorDialogDismiss,
+            OryxisColors::t().text_muted,
+        );
+        let dismiss_row = if danger {
+            self.modal_nav_slot_default(dismiss, 6.0, false, dismiss_el)
+        } else {
+            self.modal_nav_slot(dismiss, 6.0, false, dismiss_el)
         };
-        let mut buttons = iced::widget::row![self.modal_nav_slot(
-            RowAction::activate(Message::ErrorDialogDismiss),
-            6.0,
-            false,
-            styled_button(
-                crate::i18n::t(dismiss_key),
-                Message::ErrorDialogDismiss,
-                OryxisColors::t().text_muted,
-            ),
-        )]
-        .spacing(8);
+        let mut buttons = iced::widget::row![dismiss_row].spacing(8);
         if let Some(link) = dialog.link.clone() {
             let url = link.url.clone();
             buttons = buttons.push(self.modal_nav_slot(
@@ -868,15 +880,17 @@ impl Oryxis {
             ));
         }
         if let Some(action) = dialog.action.clone() {
-            // Recovery action, accent-styled like the link button;
-            // dispatching goes through ErrorDialogRunAction so the
-            // dialog also dismisses itself.
-            buttons = buttons.push(self.modal_nav_slot_default(
-                RowAction::activate(Message::ErrorDialogRunAction),
-                6.0,
-                true,
-                dialog_action_button(action.label, action.danger),
-            ));
+            // Accent-styled like the link button; dispatching goes
+            // through ErrorDialogRunAction so the dialog also dismisses
+            // itself. Default only when it is NOT dangerous: the
+            // refusing row above already took it otherwise.
+            let run = RowAction::activate(Message::ErrorDialogRunAction);
+            let run_el = dialog_action_button(action.label, action.danger);
+            buttons = buttons.push(if danger {
+                self.modal_nav_slot(run, 6.0, true, run_el)
+            } else {
+                self.modal_nav_slot_default(run, 6.0, true, run_el)
+            });
         }
 
         // Body uses Rich text with `.selectable(true)` so the user

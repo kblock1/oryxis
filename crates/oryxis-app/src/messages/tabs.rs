@@ -23,6 +23,10 @@ pub enum TabsMessage {
     /// after the reconnected tab, and a cached position would close a
     /// different tab than the one the user just confirmed.
     ConfirmCloseGroupedTab(Uuid),
+    /// Second step of closing a tab with a LIVE session: the confirmation
+    /// said yes, so disconnect and tear it down without asking again.
+    /// Id like `ConfirmCloseGroupedTab`, for the same reason.
+    ConfirmCloseLiveTab(Uuid),
     /// Bring back the last closed tab (issue #186), terminal or SFTP.
     /// Pops `Oryxis::closed_tabs` and reopens it through the same spec
     /// resolution a dormant pinned tab uses.
@@ -186,7 +190,16 @@ pub enum TabsMessage {
     DeleteFolderKeepHosts,
     DeleteFolderWithHosts,
     CloseOtherTabs(usize),
+    /// Second step of "Close other tabs": at least one of the tabs being
+    /// dropped held a live session and the confirmation said yes, so
+    /// tear them down without asking again. Carries the ID of the tab
+    /// to KEEP (resolved at execution time, like the other Confirm
+    /// variants: the modal survives index moves).
+    ConfirmCloseOtherTabs(Uuid),
     CloseAllTabs,
+    /// Second step of "Close all tabs", same contract as
+    /// `ConfirmCloseOtherTabs`.
+    ConfirmCloseAllTabs,
     MouseMoved(Point),
     /// A drag-out's payload finished preparing (issue #167): remote
     /// handles opened, runtime captured. It waits in the armed gesture
@@ -257,6 +270,12 @@ pub enum TabsMessage {
     /// timed `Task::perform` 3 s after entering fullscreen.
     FullscreenHintHide,
     WindowClose,
+    /// Second step of closing the WINDOW with live sessions: the
+    /// confirmation said yes, so tear the window down without asking
+    /// again. A distinct message (not a re-fired `WindowClose`) so the
+    /// guard can never mistake the confirmation for a new close
+    /// request, nor a later real request for a confirmed one.
+    ConfirmCloseWindow,
     /// Spawn a fresh top-level Oryxis window without binding to any
     /// existing tab. Triggered by Ctrl+Shift+N and the burger menu's
     /// "New Window" entry. Inherits the vault master password the

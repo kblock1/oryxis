@@ -64,6 +64,13 @@ impl Oryxis {
                     }
                 }
             }
+            SettingsMessage::ToggleConfirmCloseSessionTab => {
+                self.prefs.confirm_close_session_tab = !self.prefs.confirm_close_session_tab;
+                self.persist_setting(
+                    "confirm_close_session_tab",
+                    if self.prefs.confirm_close_session_tab { "true" } else { "false" },
+                );
+            }
             SettingsMessage::SmartTabsThresholdChanged(label) => {
                 if let Some((secs, _)) = crate::smart_tabs::threshold_options()
                     .into_iter()

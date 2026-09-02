@@ -270,6 +270,9 @@ pub enum SettingsMessage {
     /// Smart-tabs long-command threshold changed from the settings pick
     /// (display label; resolved via `smart_tabs::threshold_options`).
     SmartTabsThresholdChanged(String),
+    /// Confirm-before-closing a live-session tab toggled in
+    /// Settings > Terminal.
+    ToggleConfirmCloseSessionTab,
     ToggleKeywordHighlight,
     ToggleSmartContrast,
     SettingToggleShowStatusBar,

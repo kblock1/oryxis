@@ -159,14 +159,19 @@ impl Oryxis {
         self.prune_quick_connects();
     }
 
-    /// Close a tab, asking first when it is a group.
+    /// Close a tab, asking first when it is a group, or when it holds a
+    /// live session and `confirm_close_session_tab` is on.
     ///
     /// A grouped tab is several live sessions behind one chip, and the
     /// close X is a small target sitting in the strip next to every
     /// other chip. Losing one session to a misplaced click is annoying;
-    /// losing four at once is the report (#112). Single-pane tabs keep
-    /// closing silently, which is the overwhelmingly common case and
-    /// where a prompt would only be in the way.
+    /// losing four at once is the report (#112).
+    ///
+    /// For a single-pane live tab the ask is an OPT-IN guard
+    /// (Settings > Terminal): most SSH clients close straight through,
+    /// so the default follows them, and users who would rather not
+    /// drop a connection to a misplaced click turn it on. Dead tabs
+    /// and local shells never prompt either way.
     ///
     /// The gate lives here rather than at the call sites so every close
     /// path is covered by construction: the strip's X, the tab context
@@ -195,7 +200,220 @@ impl Oryxis {
             });
             return Task::none();
         }
+        if self.prefs.confirm_close_session_tab && self.tab_has_live_session(idx) {
+            let Some(tab) = self.tabs.get(idx) else {
+                return Task::none();
+            };
+            let tab_id = tab._id;
+            let label = tab
+                .label
+                .trim_end_matches(" (disconnected)")
+                .trim()
+                .to_string();
+            self.overlay = None;
+            self.error_dialog = Some(crate::state::ErrorDialog {
+                title: crate::i18n::t("close_session_title").to_string(),
+                body: crate::i18n::t("close_session_body")
+                    .replacen("{name}", &label, 1),
+                link: None,
+                action: Some(crate::state::ErrorDialogAction {
+                    label: crate::i18n::t("close_session_confirm").to_string(),
+                    message: Box::new(Message::Tabs(TabsMessage::ConfirmCloseLiveTab(tab_id))),
+                    danger: true,
+                }),
+            });
+            return Task::none();
+        }
         self.close_tab_now(idx)
+    }
+
+    /// Whether closing the tab at `idx` would end a live remote session.
+    ///
+    /// Reads the same derived state the strip's status dot and the
+    /// status bar's connection segment use, so "the X asked me first"
+    /// and "the dot was green" can never disagree. Connecting /
+    /// reconnecting dials count: cancelling a dial in flight is a live
+    /// action too. A local shell, a dormant pin and a tab whose session
+    /// already died are all safe to close without asking.
+    pub(crate) fn tab_has_live_session(&self, idx: usize) -> bool {
+        use crate::tab_conn_state::TabConnState;
+        matches!(
+            self.tab_conn_state(idx),
+            TabConnState::Connecting
+                | TabConnState::Reconnecting
+                | TabConnState::Connected
+                | TabConnState::NoContact
+        ) || self
+            .tabs
+            .get(idx)
+            .is_some_and(|t| t
+                .pane_grid
+                .panes
+                .values()
+                .any(|p| p.session.as_ref().is_some_and(|s| s.is_alive())))
+    }
+
+    /// How many of `idxs` would drop a live session.
+    fn live_session_count(&self, idxs: &[usize]) -> usize {
+        idxs.iter()
+            .filter(|&&i| self.tab_has_live_session(i))
+            .count()
+    }
+
+    /// How many open tabs currently hold a live session. The question
+    /// behind the window-X and tray-Quit guards, which act on every
+    /// tab at once.
+    pub(crate) fn live_session_tab_count(&self) -> usize {
+        (0..self.tabs.len())
+            .filter(|&i| self.tab_has_live_session(i))
+            .count()
+    }
+
+    /// The batch-close gate shared by "Close other tabs" and "Close all
+    /// tabs": same opt-in as the single-tab guard (off by default, like
+    /// most SSH clients), but it can only fire through the context menu
+    /// rather than a stray X, so the ask names the count of live
+    /// sessions about to be dropped, not one label.
+    fn batch_close_confirm(
+        &mut self,
+        title_key: &str,
+        body_key: &str,
+        confirm_key: &str,
+        live: usize,
+        yes: Message,
+    ) {
+        self.overlay = None;
+        self.error_dialog = Some(crate::state::ErrorDialog {
+            title: crate::i18n::t(title_key).to_string(),
+            body: crate::i18n::t(body_key).replacen("{n}", &live.to_string(), 1),
+            link: None,
+            action: Some(crate::state::ErrorDialogAction {
+                label: crate::i18n::t(confirm_key).to_string(),
+                message: Box::new(yes),
+                danger: true,
+            }),
+        });
+    }
+
+    /// Close every tab except `idx` and the pinned ones, asking first
+    /// when any closed tab holds a live session.
+    pub(super) fn handle_close_other_tabs(&mut self, idx: usize) -> Task<Message> {
+        self.overlay = None;
+        if idx >= self.tabs.len() {
+            return Task::none();
+        }
+        let target_id = self.tabs[idx]._id;
+        let doomed: Vec<usize> = (0..self.tabs.len())
+            .filter(|&i| self.tabs[i]._id != target_id && !self.tabs[i].pinned)
+            .collect();
+        let live = self.live_session_count(&doomed);
+        if live > 0 && self.prefs.confirm_close_session_tab {
+            self.batch_close_confirm(
+                "close_others_title",
+                "close_others_body",
+                "close_others_confirm",
+                live,
+                Message::Tabs(TabsMessage::ConfirmCloseOtherTabs(target_id)),
+            );
+            return Task::none();
+        }
+        self.close_other_tabs_now(idx)
+    }
+
+    /// The "Close other tabs" close itself, with no prompt.
+    pub(super) fn close_other_tabs_now(&mut self, idx: usize) -> Task<Message> {
+        if idx < self.tabs.len() {
+            // Keep the clicked tab and every pinned tab (pinned tabs
+            // survive "close others", like a browser).
+            let target_id = self.tabs[idx]._id;
+            // Capture the connecting tab's id before filtering, so the
+            // progress state can be re-anchored / dropped afterwards.
+            let connecting_id = self
+                .connecting
+                .as_ref()
+                .and_then(|p| self.tabs.get(p.tab_idx))
+                .map(|t| t._id);
+            // Tear each one down instead of dropping it: a bare
+            // `retain` discards the struct while the connect stream
+            // keeps its own Arc on the session, so the channel, the
+            // engine tasks and the per-connection port forwards all
+            // outlive the chip (see `close_tab_sessions`). Same reason
+            // the recorded output has to be flushed and a live AI
+            // stream aborted first: closing four tabs at once must cost
+            // exactly what closing them one by one costs.
+            // Reverse order so each index is still valid when its
+            // turn comes.
+            for i in (0..self.tabs.len()).rev() {
+                if self.tabs[i]._id != target_id && !self.tabs[i].pinned {
+                    // Each one lands on the reopen stack, exactly as if
+                    // it had been closed on its own: a "close others"
+                    // that drops a screenful is the case an undo is
+                    // most wanted for.
+                    self.remember_closed_tab(i);
+                    self.teardown_tab_at(i);
+                }
+            }
+            let new_active = self
+                .tabs
+                .iter()
+                .position(|t| t._id == target_id)
+                .unwrap_or(0);
+            self.active_tab = Some(new_active);
+            self.remember_terminal_tab_focus(new_active);
+            self.reanchor_connecting_after_filter(connecting_id);
+        }
+        Task::none()
+    }
+
+    /// Close every unpinned tab, asking first when any closed tab holds
+    /// a live session.
+    pub(super) fn handle_close_all_tabs(&mut self) -> Task<Message> {
+        self.overlay = None;
+        let doomed: Vec<usize> = (0..self.tabs.len())
+            .filter(|&i| !self.tabs[i].pinned)
+            .collect();
+        let live = self.live_session_count(&doomed);
+        if live > 0 && self.prefs.confirm_close_session_tab {
+            self.batch_close_confirm(
+                "close_all_title",
+                "close_all_body",
+                "close_all_confirm",
+                live,
+                Message::Tabs(TabsMessage::ConfirmCloseAllTabs),
+            );
+            return Task::none();
+        }
+        self.close_all_tabs_now()
+    }
+
+    /// The "Close all tabs" close itself, with no prompt.
+    pub(super) fn close_all_tabs_now(&mut self) -> Task<Message> {
+        // Capture the connecting tab's id before filtering, so the
+        // progress state can be re-anchored / dropped afterwards.
+        let connecting_id = self
+            .connecting
+            .as_ref()
+            .and_then(|p| self.tabs.get(p.tab_idx))
+            .map(|t| t._id);
+        // Pinned tabs survive "close all". Torn down one by one for the
+        // reason in `close_other_tabs_now` above.
+        for i in (0..self.tabs.len()).rev() {
+            if !self.tabs[i].pinned {
+                self.remember_closed_tab(i);
+                self.teardown_tab_at(i);
+            }
+        }
+        if self.tabs.is_empty() {
+            self.active_tab = None;
+            self.clear_terminal_tab_memory();
+            self.active_view = View::Dashboard;
+            self.connecting = None;
+        } else {
+            self.active_tab = Some(0);
+            self.remember_terminal_tab_focus(0);
+            self.reanchor_connecting_after_filter(connecting_id);
+        }
+        Task::none()
     }
 
     /// The close itself, with no prompt. Reached directly for a

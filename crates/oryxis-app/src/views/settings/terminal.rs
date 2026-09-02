@@ -818,6 +818,8 @@ impl Oryxis {
             Space::new().height(10),
             self.nav_toggle_row(crate::i18n::t("smart_tabs"), self.prefs.smart_tabs, Message::Settings(SettingsMessage::SettingToggleSmartTabs)),
             self.smart_tabs_threshold_row(),
+            Space::new().height(10),
+            self.nav_toggle_row(crate::i18n::t("confirm_close_session_tab"), self.prefs.confirm_close_session_tab, Message::Settings(SettingsMessage::ToggleConfirmCloseSessionTab)),
         ];
 
         // Integration: what the REMOTE END is allowed to drive, and what

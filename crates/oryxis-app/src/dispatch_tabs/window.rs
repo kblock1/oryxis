@@ -462,7 +462,59 @@ impl Oryxis {
         })
     }
 
+    /// The window's close button / Alt+F4 / taskbar Close, gated on the
+    /// same opt-in guard the tab closes use (Settings > Terminal).
+    ///
+    /// Every close verb lands here: the chrome's X, the side-dock
+    /// header's X, Alt+F4 and the taskbar's Close (the `CloseRequested`
+    /// subscription), because the window builder takes ownership of the
+    /// OS close event. Not guarded: the tray's Quit (the one deliberate
+    /// escape hatch once a window is hidden), and close-to-tray, which
+    /// keeps the sessions alive behind the hidden window, so there is
+    /// nothing to lose.
+    ///
+    /// The confirmation fires `ConfirmCloseWindow`, a message of its
+    /// own rather than a re-fired `WindowClose`: nothing else can
+    /// produce that message, so the guard can never mistake the
+    /// confirmation for a fresh close request, nor a later real request
+    /// for a confirmation that already happened.
     pub(super) fn handle_window_close(&mut self) -> Task<Message> {
+        if self.prefs.confirm_close_session_tab && !self.tabs.is_empty() && !self.hides_to_tray() {
+            let live = self.live_session_tab_count();
+            if live > 0 {
+                self.overlay = None;
+                self.error_dialog = Some(crate::state::ErrorDialog {
+                    title: crate::i18n::t("close_window_title").to_string(),
+                    body: crate::i18n::t("close_window_body")
+                        .replacen("{n}", &live.to_string(), 1),
+                    link: None,
+                    action: Some(crate::state::ErrorDialogAction {
+                        label: crate::i18n::t("close_window_confirm").to_string(),
+                        message: Box::new(Message::Tabs(TabsMessage::ConfirmCloseWindow)),
+                        danger: true,
+                    }),
+                });
+                return Task::none();
+            }
+        }
+        self.close_window_now()
+    }
+
+    /// Whether the close verb hides the window instead of ending the
+    /// process. One owner, because two callers ask it for opposite
+    /// reasons a few lines apart: the guard above skips the ask (a
+    /// hidden window keeps every session alive, so nothing is at
+    /// stake), and `close_window_now` below takes the hide branch. Two
+    /// copies of the predicate would eventually answer differently, and
+    /// the failure would be an ask that never fires.
+    fn hides_to_tray(&self) -> bool {
+        self.prefs.close_to_tray && cfg!(target_os = "windows")
+    }
+
+    /// The window close itself, with no prompt: teardown, tray-or-real
+    /// close, plugin drain. Reached directly when the guard is off or
+    /// nothing was live, and from `ConfirmCloseWindow` after the ask.
+    fn close_window_now(&mut self) -> Task<Message> {
         // The session-log tail, a debouncing host-editor save and the
         // window geometry: the shared list every door that takes the
         // window away runs. Before the branch below, because
@@ -477,7 +529,7 @@ impl Oryxis {
         // other platforms the helper is a no-op so we fall
         // through to a real close. Default (off) closes for
         // everyone.
-        if self.prefs.close_to_tray && cfg!(target_os = "windows") {
+        if self.hides_to_tray() {
             self.is_window_hidden = true;
             // Same instant-reveal as the minimize path: the icon is the
             // only way back once the window is hidden.
@@ -651,6 +703,7 @@ impl Oryxis {
                 });
             }
             TabsMessage::WindowClose => return self.handle_window_close(),
+            TabsMessage::ConfirmCloseWindow => return self.close_window_now(),
             TabsMessage::WindowFullscreenToggle => return self.handle_window_fullscreen_toggle(),
             TabsMessage::FullscreenHintHide => {
                 self.fullscreen_hint_visible = false;

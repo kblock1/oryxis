@@ -75,6 +75,7 @@ impl Oryxis {
                 | TabsMessage::WindowMaximizeToggle
                 | TabsMessage::WindowMaximizedSynced(..)
                 | TabsMessage::WindowClose
+                | TabsMessage::ConfirmCloseWindow
                 | TabsMessage::WindowFullscreenToggle
                 | TabsMessage::FullscreenHintHide
                 | TabsMessage::SpawnNewWindow
@@ -101,9 +102,12 @@ impl Oryxis {
                 | TabsMessage::CloseTab(..)
                 | TabsMessage::CloseTabFromStrip(..)
                 | TabsMessage::ConfirmCloseGroupedTab(..)
+                | TabsMessage::ConfirmCloseLiveTab(..)
                 | TabsMessage::ReopenClosedTab
                 | TabsMessage::CloseOtherTabs(..)
+                | TabsMessage::ConfirmCloseOtherTabs(..)
                 | TabsMessage::CloseAllTabs
+                | TabsMessage::ConfirmCloseAllTabs
                 | TabsMessage::ClosePanelTab(..)
                 | TabsMessage::ToggleTabPin(..)
                 | TabsMessage::ReconnectTab(..)

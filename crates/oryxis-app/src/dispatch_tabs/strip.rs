@@ -2,9 +2,12 @@
 //! per-tab menus.
 //!
 //! Closing is the arm with teeth: a grouped tab tears down every pane in
-//! it, so it confirms first, and the confirm lives in `handle_close_tab`
-//! rather than at each call site (strip X, context menu, Ctrl+W and the
-//! terminal's own path all reach it).
+//! it, so it confirms first, a live single-session tab confirms when the
+//! opt-in guard is on, and "close others" / "close all" confirm when any
+//! closed tab is live. The gates live in `handle_close_tab` and
+//! `handle_close_other_tabs` / `handle_close_all_tabs` rather than at
+//! each call site (strip X, context menu, Ctrl+W and the terminal's own
+//! path all reach them).
 
 use super::*;
 
@@ -21,89 +24,34 @@ impl Oryxis {
                 self.hover.tab_close_click_at = Some(std::time::Instant::now());
                 return self.handle_close_tab(idx);
             }
-            // Resolve the dialog's tab id to an index NOW, at execution:
-            // the modal can sit open across async updates (an
-            // auto-reconnect's remove + rebuild shifts indices), so the
-            // id is the only reference that survives. An id that no
-            // longer resolves is a tab that closed itself while the
-            // question was on screen: nothing to confirm.
+            // The Confirm* arms resolve the dialog's tab id to an index
+            // NOW, at execution: the modal can sit open across async
+            // updates (an auto-reconnect's remove + rebuild shifts
+            // indices), so the id is the only reference that survives.
+            // An id that no longer resolves is a tab that closed itself
+            // while the question was on screen: nothing to confirm.
             TabsMessage::ConfirmCloseGroupedTab(id) => {
                 return match self.tab_index_by_id(id) {
                     Some(idx) => self.close_tab_now(idx),
                     None => Task::none(),
                 };
             }
+            TabsMessage::ConfirmCloseLiveTab(id) => {
+                return match self.tab_index_by_id(id) {
+                    Some(idx) => self.close_tab_now(idx),
+                    None => Task::none(),
+                };
+            }
             TabsMessage::ReopenClosedTab => return self.handle_reopen_closed_tab(),
-            TabsMessage::CloseOtherTabs(idx) => {
-                self.overlay = None;
-                if idx < self.tabs.len() {
-                    // Keep the clicked tab and every pinned tab (pinned tabs
-                    // survive "close others", like a browser).
-                    let target_id = self.tabs[idx]._id;
-                    // Capture the connecting tab's id before filtering, so the
-                    // progress state can be re-anchored / dropped afterwards.
-                    let connecting_id = self
-                        .connecting
-                        .as_ref()
-                        .and_then(|p| self.tabs.get(p.tab_idx))
-                        .map(|t| t._id);
-                    // Tear each one down instead of dropping it: a bare
-                    // `retain` discards the struct while the connect
-                    // stream keeps its own Arc on the session, so the
-                    // channel, the engine tasks and the per-connection
-                    // port forwards all outlive the chip (see
-                    // `close_tab_sessions`). Same reason the recorded
-                    // output has to be flushed and a live AI stream
-                    // aborted first: closing four tabs at once must cost
-                    // exactly what closing them one by one costs.
-                    // Reverse order so each index is still valid when its
-                    // turn comes.
-                    for i in (0..self.tabs.len()).rev() {
-                        if self.tabs[i]._id != target_id && !self.tabs[i].pinned {
-                            // Each one lands on the reopen stack, exactly
-                            // as if it had been closed on its own: a
-                            // "close others" that drops a screenful is
-                            // the case an undo is most wanted for.
-                            self.remember_closed_tab(i);
-                            self.teardown_tab_at(i);
-                        }
-                    }
-                    let new_active = self
-                        .tabs
-                        .iter()
-                        .position(|t| t._id == target_id)
-                        .unwrap_or(0);
-                    self.active_tab = Some(new_active);
-                    self.remember_terminal_tab_focus(new_active);
-                    self.reanchor_connecting_after_filter(connecting_id);
-                }
+            TabsMessage::CloseOtherTabs(idx) => return self.handle_close_other_tabs(idx),
+            TabsMessage::ConfirmCloseOtherTabs(id) => {
+                return match self.tab_index_by_id(id) {
+                    Some(idx) => self.close_other_tabs_now(idx),
+                    None => Task::none(),
+                };
             }
-            TabsMessage::CloseAllTabs => {
-                self.overlay = None;
-                let connecting_id = self
-                    .connecting
-                    .as_ref()
-                    .and_then(|p| self.tabs.get(p.tab_idx))
-                    .map(|t| t._id);
-                // Pinned tabs survive "close all". Torn down one by one
-                // for the reason in `CloseOtherTabs` above.
-                for i in (0..self.tabs.len()).rev() {
-                    if !self.tabs[i].pinned {
-                        self.remember_closed_tab(i);
-                        self.teardown_tab_at(i);
-                    }
-                }
-                if self.tabs.is_empty() {
-                    self.active_tab = None;
-                    self.clear_terminal_tab_memory();
-                    self.active_view = View::Dashboard;
-                    self.connecting = None;
-                } else {
-                    self.active_tab = Some(0);
-                    self.remember_terminal_tab_focus(0);
-                    self.reanchor_connecting_after_filter(connecting_id);
-                }
-            }
+            TabsMessage::CloseAllTabs => return self.handle_close_all_tabs(),
+            TabsMessage::ConfirmCloseAllTabs => return self.close_all_tabs_now(),
             TabsMessage::ClosePanelTab(kind) => {
                 return self.close_panel_tab(kind);
             }

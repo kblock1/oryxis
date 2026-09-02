@@ -303,6 +303,7 @@ impl Oryxis {
             | SettingsMessage::NotificationModeChanged(..)
             | SettingsMessage::SettingToggleSmartTabs
             | SettingsMessage::SmartTabsThresholdChanged(..)
+            | SettingsMessage::ToggleConfirmCloseSessionTab
             | SettingsMessage::ToggleKeywordHighlight
             | SettingsMessage::ToggleSmartContrast
             | SettingsMessage::SettingScrollbackChanged(..)
