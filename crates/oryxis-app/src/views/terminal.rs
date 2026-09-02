@@ -145,6 +145,50 @@ impl Oryxis {
                 // and no text selection starts. The leeway is back at 8
                 // now that nothing competes for those pixels.
                 .on_resize(8, |v| Message::Terminal(TerminalMessage::ResizePane(v)))
+                // Rearranging the grid by dragging a pane (issue #208
+                // item 4). Wired unconditionally on purpose: the widget
+                // gates itself twice over, and both gates are the ones
+                // we would have written. It refuses to start a drag on a
+                // pane with no title bar (`Content::can_be_dragged_at`),
+                // so this is inert unless the header preference put one
+                // there, and it drops the handler entirely while a pane
+                // is maximized, so a zoomed tab cannot be rearranged
+                // underneath its own zoom.
+                //
+                // The target is resolved by the grid rather than by
+                // `pane_drop::drop_target_at`, which exists for the
+                // OTHER gesture: a tab dragged out of the strip never
+                // enters the widget's dragging state, so nothing there
+                // computes a target or paints a preview and we have to.
+                // A drag that starts on a pane does both for us, and
+                // restating them here would be a second answer drawn
+                // over the widget's own.
+                .on_drag(|v| Message::Terminal(TerminalMessage::PaneDrag(v)))
+                .style(|_| iced::widget::pane_grid::Style {
+                    // The drop preview and the split lines, in the app's
+                    // accent rather than the fork default's, which reads
+                    // `Theme::palette().primary` from iced's own theme
+                    // and has no idea what an Oryxis palette looks like.
+                    hovered_region: iced::widget::pane_grid::Highlight {
+                        background: Background::Color(Color {
+                            a: 0.25,
+                            ..OryxisColors::t().accent
+                        }),
+                        border: Border {
+                            width: 2.0,
+                            color: OryxisColors::t().accent,
+                            radius: Radius::from(0.0),
+                        },
+                    },
+                    hovered_split: iced::widget::pane_grid::Line {
+                        color: OryxisColors::t().accent,
+                        width: 2.0,
+                    },
+                    picked_split: iced::widget::pane_grid::Line {
+                        color: OryxisColors::t().accent,
+                        width: 2.0,
+                    },
+                })
                 .spacing(if multipane { gap } else { 0.0 })
                 .width(Length::Fill)
                 .height(Length::Fill);

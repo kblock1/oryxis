@@ -238,6 +238,39 @@ impl Oryxis {
                     tab.pane_grid.resize(ev.split, ev.ratio);
                 }
             }
+            TerminalMessage::PaneDrag(ev) => {
+                // Only the drop carries anything to do. `Picked` and
+                // `Canceled` describe a gesture the WIDGET is already
+                // tracking in its own `Action::Dragging`, including the
+                // preview it paints, so answering them would be a second
+                // opinion about a drag we do not own.
+                if let iced::widget::pane_grid::DragEvent::Dropped { pane, target } = ev
+                    && let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(tab_idx)
+                {
+                    // Nothing leaves the tab, so none of the bookkeeping a
+                    // pane CLOSE does applies: no session to tear down, no
+                    // log to end, no monitor row to reset, no quick-connect
+                    // to prune. The panes swap places and keep everything
+                    // they own, which is also why a session group is
+                    // unaffected (`snapshot_tab_layout` walks the live
+                    // tree at save time rather than a stored copy).
+                    //
+                    // `focused` is deliberately left alone. `State::drop`
+                    // relabels the node it creates back onto the moved
+                    // pane's handle, so every handle survives the move;
+                    // re-deriving focus here would be repairing something
+                    // that did not break (`flip_split_at` DOES have to,
+                    // because rebuilding the tree mints fresh handles).
+                    //
+                    // `Region::Center` means SWAP here, which is the exact
+                    // answer `pane_drop::drop_target_at` refuses for a
+                    // cross-tab drop. Both are right: two panes of one tab
+                    // can trade places, while a pane arriving from another
+                    // tab has nothing to trade with.
+                    tab.pane_grid.drop(pane, target);
+                }
+            }
             TerminalMessage::SplitPane(axis) => {
                 // Open the connection picker to choose what fills the new
                 // pane (a host, or a local shell). The selection routes into

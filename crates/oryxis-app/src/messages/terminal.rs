@@ -85,6 +85,10 @@ pub enum TerminalMessage {
     FocusPane(iced::widget::pane_grid::Pane),
     /// Drag a pane divider to resize.
     ResizePane(iced::widget::pane_grid::ResizeEvent),
+    /// Rearrange the panes of ONE tab by dragging a pane's header
+    /// (issue #208 item 4). The grid resolves the target itself, so the
+    /// event arrives already carrying where the pane was dropped.
+    PaneDrag(iced::widget::pane_grid::DragEvent),
     /// Split the focused pane of the active tab along an axis, opening the
     /// connection picker to fill the new pane.
     SplitPane(iced::widget::pane_grid::Axis),
