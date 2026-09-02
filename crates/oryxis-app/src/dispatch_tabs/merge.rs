@@ -102,6 +102,95 @@ impl Oryxis {
         Some((dest_idx, proposal))
     }
 
+    /// Move one pane into the tab whose chip the cursor is over, if it is
+    /// over one (issue #208 item 4). Answers whether it moved.
+    ///
+    /// The inverse of the gesture above, and it reads the same way round:
+    /// there, a whole tab is dragged onto a grid to become panes; here,
+    /// one pane is dragged onto a chip to join that tab. Both are moves,
+    /// so neither tears a session down.
+    ///
+    /// A chip says WHICH tab and nothing about where in it, so the pane
+    /// lands on the destination's trailing edge: predictable without
+    /// having to know which pane happens to be focused in a tab that is
+    /// not on screen. The cursor cannot say more than that, and guessing
+    /// would be worse than a rule.
+    ///
+    /// `from` is the tab the drag STARTED in, recorded when the widget
+    /// picked the pane up, because neither the handle nor `active_tab`
+    /// can name it by now: see `Oryxis::pane_drag_from`.
+    pub(crate) fn move_pane_to_hovered_tab(
+        &mut self,
+        from: Option<(uuid::Uuid, PaneHandle)>,
+        handle: PaneHandle,
+    ) -> bool {
+        if !self.cursor_in_tab_strip() {
+            return false;
+        }
+        let Some((src_id, picked)) = from else {
+            return false;
+        };
+        // The widget reports the pane it released; it must be the one it
+        // told us it had picked up, or the record is from another drag.
+        if picked != handle {
+            return false;
+        }
+        let (Some(dest_idx), Some(src_idx)) =
+            (self.hover.tab, self.tabs.iter().position(|t| t._id == src_id))
+        else {
+            return false;
+        };
+        // Onto its own chip is a no-op, not a move to nowhere.
+        if dest_idx == src_idx {
+            return false;
+        }
+        let Some(dest) = self.tabs.get(dest_idx) else {
+            return false;
+        };
+        // A dormant pinned tab is a placeholder carrying a reopen spec,
+        // not a grid; there is nothing to join yet.
+        if dest.pending_reopen.is_some() {
+            return false;
+        }
+        let Some(src) = self.tabs.get(src_idx) else {
+            return false;
+        };
+        // The last pane of a tab cannot leave this way: the tab would be
+        // left empty, and the gesture cannot start on it anyway (a lone
+        // pane grows no header, so there is no handle to drag).
+        if src.pane_count() <= 1 {
+            return false;
+        }
+        let keepalive = src.ssm_keepalive;
+        // Flushed while the pane's own tab still owns the bookkeeping.
+        // Nothing is ending: the log id travels and keeps writing to the
+        // row it already had.
+        self.flush_session_logs_final();
+        let Some(pane) = self.tabs[src_idx].take_pane(handle) else {
+            return false;
+        };
+        let dest = &mut self.tabs[dest_idx];
+        // Per TAB rather than per pane, so a pane arriving from a
+        // keepalive tab would otherwise start idling out.
+        dest.ssm_keepalive |= keepalive;
+        let landed = insert_panes(
+            &mut dest.pane_grid,
+            Target::Edge(Edge::Right),
+            vec![pane],
+        );
+        // The arriving pane takes the destination's focus, so switching
+        // to that tab lands on what was just put there.
+        if let Some(first) = landed.first() {
+            dest.focused = *first;
+        }
+        // `active_tab` is not set here, and the view still follows the
+        // pane: the release that ended the drag also reaches the chip's
+        // own button, which selects that tab. Setting it as well would be
+        // a second opinion about the same click, and the chip's is the
+        // one that would win anyway.
+        true
+    }
+
     /// Perform the proposed drop: move every pane of the dragged tab into
     /// the displayed tab's grid and retire the source chip.
     ///
@@ -218,7 +307,7 @@ fn detach_panes_in_layout_order(
 /// on its trailing side. Chaining forwards (rather than repeating the
 /// target) is what keeps a multi-pane source in its original
 /// left-to-right order even when it lands on a leading edge.
-fn insert_panes(
+pub(crate) fn insert_panes(
     grid: &mut iced::widget::pane_grid::State<crate::state::Pane>,
     target: Target,
     panes: Vec<crate::state::Pane>,
@@ -386,5 +475,65 @@ mod tests {
         let detached = detach_panes_in_layout_order(source);
         let order: Vec<&str> = detached.iter().map(|p| p.label.as_str()).collect();
         assert_eq!(order, ["second", "first"]);
+    }
+
+    /// A pane arriving from ANOTHER tab (issue #208 item 4) joins on the
+    /// trailing edge and keeps what it owns, and the source settles
+    /// behind it. The inverse of the drop above, and neither is a close,
+    /// so the session, its recording and its origin all survive the trip.
+    #[test]
+    fn a_pane_moved_between_tabs_lands_whole_on_the_trailing_edge() {
+        use crate::state::{PaneOrigin, TerminalTab};
+
+        fn tab_labels(tab: &TerminalTab) -> Vec<String> {
+            let regions = tab
+                .pane_grid
+                .layout()
+                .pane_regions(0.0, 50.0, Size::new(4096.0, 4096.0));
+            let mut order: Vec<_> = regions.into_iter().collect();
+            order.sort_by(|(_, a), (_, b)| a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x)));
+            order
+                .iter()
+                .filter_map(|(h, _)| tab.pane_grid.panes.get(h).map(|p| p.label.clone()))
+                .collect()
+        }
+
+        // Source: two panes, the second carrying state that must travel.
+        let mut src = TerminalTab::adopting(pane("keep"));
+        let first = src.focused;
+        let mut leaving = pane("leaving");
+        let log_id = uuid::Uuid::new_v4();
+        let leaving_id = leaving.id;
+        leaving.session_log_id = Some(log_id);
+        leaving.origin = PaneOrigin::Host(uuid::Uuid::new_v4());
+        let (second, _) = src
+            .pane_grid
+            .split(Axis::Vertical, first, leaving)
+            .expect("split");
+        src.focused = second;
+
+        let mut dest = TerminalTab::adopting(pane("dest"));
+
+        let taken = src.take_pane(second).expect("the pane");
+        let landed = insert_panes(&mut dest.pane_grid, Target::Edge(Edge::Right), vec![taken]);
+
+        assert_eq!(
+            tab_labels(&dest),
+            ["dest", "leaving"],
+            "did not land on the trailing edge",
+        );
+        let arrived = dest
+            .pane_grid
+            .panes
+            .get(landed.first().expect("a landed handle"))
+            .expect("the arrived pane");
+        assert_eq!(arrived.id, leaving_id, "the pane was rebuilt instead of moved");
+        assert_eq!(arrived.session_log_id, Some(log_id), "the recording was ended");
+        assert!(matches!(arrived.origin, PaneOrigin::Host(_)), "the origin was lost");
+
+        // And the source settled behind it.
+        assert_eq!(tab_labels(&src), ["keep"]);
+        assert_eq!(src.label, "keep", "the source kept the name of the pane that left");
+        assert_eq!(src.focused, first, "focus did not follow to the survivor");
     }
 }

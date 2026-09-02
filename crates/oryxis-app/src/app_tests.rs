@@ -503,3 +503,4 @@ fn a_tab_settles_when_a_pane_leaves_it() {
     let _ = tab.take_pane(second);
     assert_eq!(tab.focused, first, "closing a background pane yanked the keyboard");
 }
+

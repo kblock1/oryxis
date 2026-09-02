@@ -561,6 +561,7 @@ impl Oryxis {
                 pin_next_plugin_tab: None,
                 pending_ecs_autoconnect: None,
                 tab_drag: None,
+                pane_drag_from: None,
                 panel_width: crate::app::PANEL_WIDTH,
                 panel_resize_drag: None,
                 editor_saved_snapshot: None,

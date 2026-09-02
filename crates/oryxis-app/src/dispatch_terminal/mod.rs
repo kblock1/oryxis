@@ -239,11 +239,33 @@ impl Oryxis {
                 }
             }
             TerminalMessage::PaneDrag(ev) => {
-                // Only the drop carries anything to do. `Picked` and
-                // `Canceled` describe a gesture the WIDGET is already
-                // tracking in its own `Action::Dragging`, including the
-                // preview it paints, so answering them would be a second
-                // opinion about a drag we do not own.
+                // `Canceled` is the release that landed on no pane, which
+                // is also the release that landed on the TAB STRIP. If a
+                // chip was under it the pane joins that tab (issue #208
+                // item 4); anywhere else it stays where it is, which is
+                // what the widget already means by cancelling.
+                //
+                // `Picked` only records where the pane came from. The
+                // drag itself is still entirely the widget's, preview
+                // included; what cannot be recovered later is the SOURCE.
+                // A pane handle is minted per grid and unique only within
+                // one, and `active_tab` is no help either: this release
+                // also reaches the destination chip's button, which fires
+                // on the release rather than the press, so the active tab
+                // may already be the destination by now.
+                if let iced::widget::pane_grid::DragEvent::Picked { pane } = ev {
+                    if let Some(id) = self.active_tab.and_then(|i| self.tabs.get(i)).map(|t| t._id)
+                    {
+                        self.pane_drag_from = Some((id, pane));
+                    }
+                    return Task::none();
+                }
+                if let iced::widget::pane_grid::DragEvent::Canceled { pane } = ev {
+                    let from = self.pane_drag_from.take();
+                    self.move_pane_to_hovered_tab(from, pane);
+                    return Task::none();
+                }
+                self.pane_drag_from = None;
                 if let iced::widget::pane_grid::DragEvent::Dropped { pane, target } = ev
                     && let Some(tab_idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(tab_idx)
