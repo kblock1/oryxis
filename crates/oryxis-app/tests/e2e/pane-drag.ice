@@ -23,11 +23,20 @@ mode: Zen
 # the batch runner reports no coordinates for `find`, so there is no way
 # to assert a pane's position in text.
 #
-# Unlike tab-drag-split.ice, this needs NO screenshot mid-gesture. That
-# one takes one because its drop hit-tests the app's own `Pane.bounds`
-# cells, which only fill in when something draws; a drag that starts on
-# a pane is hit-tested by the grid against its own layout tree, which
-# the emulator has whether or not a frame was rendered.
+# Unlike tab-drag-split.ice, the DROP here needs no screenshot to work.
+# That one takes one because its drop hit-tests the app's own
+# `Pane.bounds` cells, which only fill in when something draws; a drag
+# that starts on a pane is hit-tested by the grid against its own layout
+# tree, which the emulator has whether or not a frame was rendered.
+#
+# The two mid-gesture shots are about the PREVIEW rather than the drop.
+# The highlight is the rectangle the pane lands in, which is not the
+# region the cursor is over: dropping on a pane's edge closes the dragged
+# pane first and the target grows into the gap, and a grid edge re-splits
+# the root rather than the band being hovered. On this 1200 wide grid
+# both shots should therefore show a HALF, x=600 w=600 over the right
+# pane's right third and x=0 w=600 on the left rim, not the ~300 wide
+# third and the ~27 wide band the cursor is actually inside.
 expect "Welcome to Oryxis"
 click "Skip"
 click "Continue without password"
@@ -64,6 +73,16 @@ press (300, 54)
 settle 200
 move (340, 70)
 settle 200
+# Over the right pane's right third: the preview is the right half of
+# the GRID, because the target inherits this pane's space on the way out.
+move (1100, 400)
+settle 400
+screenshot pane-drag-preview-pane
+# Over the grid's own left rim: the preview is the left half of the grid,
+# not the thin band the cursor has to be inside to aim at it.
+move (10, 400)
+settle 400
+screenshot pane-drag-preview-rim
 move (900, 700)
 settle 400
 release (900, 700)
