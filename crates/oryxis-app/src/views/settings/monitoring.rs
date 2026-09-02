@@ -27,6 +27,22 @@ impl Oryxis {
                 .color(OryxisColors::t().text_muted),
         ]);
 
+        // "Only hosts with a live session" (issue #197): sits right
+        // under "Enable for all hosts" because it answers the question
+        // that toggle raises, which of the hosts it swept in the fleet
+        // view should actually be reached.
+        let live_only_section = panel_section(column![
+            self.nav_toggle_row(
+                t("monitor_dash_live_only"),
+                self.prefs.monitor_dash_live_only,
+                Message::Settings(SettingsMessage::SettingToggleMonitorDashLiveOnly),
+            ),
+            Space::new().height(4),
+            text(t("monitor_dash_live_only_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        ]);
+
         // Probe interval (moved here from Connection).
         let interval_section = panel_section(column![
             text(t("monitor_interval")).size(13).color(OryxisColors::t().text_primary),
@@ -65,6 +81,8 @@ impl Oryxis {
 
         let content = column![
             all_hosts_section,
+            Space::new().height(12),
+            live_only_section,
             Space::new().height(12),
             interval_section,
             Space::new().height(12),

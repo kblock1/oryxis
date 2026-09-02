@@ -39,13 +39,25 @@ impl Oryxis {
         let fleet = self.dash_hosts();
 
         if fleet.is_empty() {
+            // Two different empty boards, and telling the user to opt a
+            // host in when they already have is how an empty screen
+            // becomes a dead end: with the live-only filter on, hosts
+            // ARE opted in and the board is waiting for a session
+            // instead (issue #197).
+            let waiting_for_session = self.prefs.monitor_dash_live_only
+                && self.connections.iter().any(|c| self.monitor_conn_opted_in(c));
+            let (empty, hint) = if waiting_for_session {
+                ("monitor_dash_empty_live", "monitor_dash_empty_live_hint")
+            } else {
+                ("monitor_dash_empty", "monitor_dash_empty_hint")
+            };
             return container(
                 column![
-                    text(t("monitor_dash_empty"))
+                    text(t(empty))
                         .size(15)
                         .color(OryxisColors::t().text_primary),
                     Space::new().height(8),
-                    text(t("monitor_dash_empty_hint"))
+                    text(t(hint))
                         .size(12)
                         .color(OryxisColors::t().text_muted),
                 ]

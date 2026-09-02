@@ -391,6 +391,14 @@ pub(crate) struct AppPrefs {
     /// locked-on. When off, the per-host opt-in decides. The effective
     /// per-host value is `setting_monitor_all_hosts || conn.monitor_enabled`.
     pub(crate) monitor_all_hosts: bool,
+    /// "Only hosts with a live session" (issue #197): when on, the
+    /// Monitoring dashboard is limited to machines a terminal tab is
+    /// already logged in to, so the one surface that opens connections
+    /// of its own stops opening any. Off (the default) it dials every
+    /// opted-in host, which is what the fleet view is for. It governs
+    /// the DASHBOARD alone: the sidebar tab reads the pane it belongs
+    /// to and has a live session by construction.
+    pub(crate) monitor_dash_live_only: bool,
     /// Master toggle for the tmux session manager (issue #116), in
     /// Features & Plugins. Off by default: managing tmux from a panel
     /// is niche, so the sidebar tab and everything else it owns stay
@@ -654,6 +662,7 @@ impl Default for AppPrefs {
             host_monitoring: false,
             host_monitoring_seeded: false,
             monitor_all_hosts: false,
+            monitor_dash_live_only: false,
             tmux_manager: false,
             ssh_connection_reuse: true,
             nav_orientation: "horizontal".into(),

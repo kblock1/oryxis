@@ -243,6 +243,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Sftp, "operation_timeout", "sftp operation timeout seconds stall"),
     // ── Monitoring ─────────────────────────────────────────────────
     e(S::Monitoring, "monitor_all_hosts", "monitoring all hosts enable global vitals"),
+    e(
+        S::Monitoring,
+        "monitor_dash_live_only",
+        "monitoring dashboard live session only connected hosts no dial connect",
+    ),
     e(S::Monitoring, "monitor_interval", "monitoring interval seconds probe poll"),
     e(S::Monitoring, "monitor_status_bar", "monitoring status bar vitals cpu memory widget"),
     // ── SSH Agent ──────────────────────────────────────────────────

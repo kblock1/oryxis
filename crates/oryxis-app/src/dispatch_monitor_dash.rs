@@ -199,14 +199,51 @@ impl Oryxis {
     /// probe stagger derived from the position) is stable across
     /// re-renders and reboots.
     pub(crate) fn dash_hosts(&self) -> Vec<Uuid> {
+        // "Only hosts with a live session" (issue #197): the fleet is
+        // the one surface that opens connections nobody asked for, so
+        // the answer is to narrow WHAT IT IS, not to keep the board and
+        // suppress the dialing. A machine off the board holds no link,
+        // gets no probe and leaves no card that would have to explain
+        // why it is empty. The keys are collected once rather than per
+        // row: this runs on every render and every heartbeat.
+        let live = self
+            .prefs
+            .monitor_dash_live_only
+            .then(|| self.dash_live_keys());
         let mut hosts: Vec<(String, Uuid)> = self
             .connections
             .iter()
             .filter(|c| self.monitor_conn_opted_in(c))
+            .filter(|c| live.as_ref().is_none_or(|keys| keys.contains(&MonitorKey::new(c))))
             .map(|c| (c.label.to_lowercase(), c.id))
             .collect();
         hosts.sort();
         hosts.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// The MACHINES a terminal tab is logged in to right now, keyed the
+    /// way the dashboard keys everything else, so a row whose own
+    /// session is closed still counts when a sibling row reaches the
+    /// same server (issue #156's rule, applied to the filter above).
+    fn dash_live_keys(&self) -> std::collections::HashSet<MonitorKey> {
+        let mut keys = std::collections::HashSet::new();
+        for tab in &self.tabs {
+            for pane in tab.pane_grid.panes.values() {
+                let crate::state::PaneOrigin::Host(id) = pane.origin else {
+                    continue;
+                };
+                if pane
+                    .session
+                    .as_ref()
+                    .and_then(|s| s.ssh())
+                    .is_some_and(|s| s.is_alive())
+                    && let Some(key) = self.monitor_key(&id)
+                {
+                    keys.insert(key);
+                }
+            }
+        }
+        keys
     }
 
     /// The fleet folded into MACHINES (issue #156): one entry per

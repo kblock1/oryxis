@@ -298,6 +298,9 @@ pub enum SettingsMessage {
     SettingToggleHostMonitoring,
     /// Monitoring section: "Enable for all hosts" (issue #83).
     SettingToggleMonitorAllHosts,
+    /// Monitoring section: limit the dashboard to hosts a tab is already
+    /// logged in to, so it never dials on its own (issue #197).
+    SettingToggleMonitorDashLiveOnly,
     /// Settings > Connection: reuse a live SSH connection for a second
     /// tab to the same host (F2).
     SettingToggleConnectionReuse,

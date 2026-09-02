@@ -138,6 +138,27 @@ impl Oryxis {
                     if self.prefs.monitor_all_hosts { "true" } else { "false" },
                 );
             }
+            SettingsMessage::SettingToggleMonitorDashLiveOnly => {
+                self.prefs.monitor_dash_live_only = !self.prefs.monitor_dash_live_only;
+                self.persist_setting(
+                    "monitor_dash_live_only",
+                    if self.prefs.monitor_dash_live_only { "true" } else { "false" },
+                );
+                // Turning it on closes what the dashboard dialled for
+                // itself, here rather than on the next heartbeat: that
+                // heartbeat only runs while the fleet is on screen, and
+                // this switch is thrown from Settings, so waiting for it
+                // would leave the connections the user just asked us to
+                // stop opening alive behind another view. The sweep is
+                // the same one the feature toggle and the vault lock
+                // use, so a dial already in flight lands on a dead
+                // stamp instead of reopening what it just closed; the
+                // links riding a tab's session cost nothing and are
+                // rebuilt on the next entry into the view.
+                if self.prefs.monitor_dash_live_only {
+                    self.monitor_dash.sweep();
+                }
+            }
             SettingsMessage::SidebarTabSideChanged(tab, placement) => {
                 if let Some(placement) = crate::state::SidebarPlacement::from_code(&placement) {
                     // Resolved BEFORE the write (the resolver applies the

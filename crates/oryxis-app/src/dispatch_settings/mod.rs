@@ -223,6 +223,7 @@ impl Oryxis {
             | SettingsMessage::SettingToggleSidebarAutoOpen
             | SettingsMessage::SettingToggleHostMonitoring
             | SettingsMessage::SettingToggleMonitorAllHosts
+            | SettingsMessage::SettingToggleMonitorDashLiveOnly
             | SettingsMessage::SettingToggleTmuxManager
             | SettingsMessage::SettingToggleConnectionReuse
             | SettingsMessage::SettingToggleMonitorStatusBar
