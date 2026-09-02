@@ -371,6 +371,16 @@ pub fn default_bindings() -> HotkeyMap {
     // `prefix z` convention for exactly this toggle. Shift lifts it out
     // of the terminal control-sequence gate.
     put(&mut m, ToggleMaximizePane, primary_ctrl, true, false, primary_logo, Char('z'));
+    // Ctrl+Alt+D (Cmd+Alt+D on macOS), reading off Ctrl+Shift+D for a
+    // split: the same D, one modifier along, for the pane leaving
+    // rather than arriving. Ctrl+Alt because Ctrl+Shift+D is the split
+    // it echoes.
+    //
+    // Note for international layouts: AltGr IS Ctrl+Alt on Windows, so
+    // this can collide with an accented character there. Same trade
+    // `ToggleSidebarOther` already makes on Ctrl+Alt+B, and every
+    // binding is rebindable.
+    put(&mut m, MovePaneToNewTab, primary_ctrl, false, true, primary_logo, Char('d'));
     // Ctrl+Shift+H (Cmd+Shift+H on macOS): Shift lifts it out of the
     // terminal control-sequence gate (plain Ctrl+H is backspace on the
     // PTY), H for the History/lists sidebar. Rebindable like the rest.

@@ -647,6 +647,20 @@ impl Oryxis {
             ToggleMaximizePane => {
                 Task::done(Message::Terminal(TerminalMessage::ToggleMaximizePane(None)))
             }
+            // Break the focused pane out into a tab of its own. The
+            // message names a PANE rather than a tab, so the focused one
+            // is resolved here; the handler declines a lone pane, which
+            // is already a tab of its own.
+            MovePaneToNewTab => match self
+                .active_tab
+                .and_then(|i| self.tabs.get(i))
+                .map(|t| t.active().id)
+            {
+                Some(pane_id) => Task::done(Message::Terminal(
+                    TerminalMessage::MovePaneToNewTab(pane_id),
+                )),
+                None => Task::none(),
+            },
             // Broadcast input: arm / disarm fan-out across the focused
             // tab's panes.
             ToggleBroadcastInput => match self.active_tab {

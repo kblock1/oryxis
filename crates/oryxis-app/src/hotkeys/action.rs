@@ -57,6 +57,10 @@ pub enum HotkeyAction {
     /// untouched while zoomed, so restoring puts every pane back exactly
     /// where it was.
     ToggleMaximizePane,
+    /// Break the focused pane out into a tab of its own. Reachable
+    /// without a mouse, and without the Menu right-click scheme that
+    /// the pane's own context menu needs.
+    MovePaneToNewTab,
     /// Ring the terminal-sidebar list rows (Snippets / History):
     /// opens the sidebar when closed, cycles the two list tabs on
     /// repeat. Terminal-only, like the split-pane family.
@@ -177,6 +181,7 @@ impl HotkeyAction {
             FocusPaneUp,
             FocusPaneDown,
             ToggleMaximizePane,
+            MovePaneToNewTab,
             FocusSidebarList,
             ToggleSidebar,
             ToggleSidebarOther,
@@ -226,6 +231,7 @@ impl HotkeyAction {
             FocusPaneUp => "focus_pane_up",
             FocusPaneDown => "focus_pane_down",
             ToggleMaximizePane => "toggle_maximize_pane",
+            MovePaneToNewTab => "move_pane_to_new_tab",
             FocusSidebarList => "focus_sidebar_list",
             ToggleSidebar => "toggle_sidebar",
             ToggleSidebarOther => "toggle_sidebar_other",
@@ -280,6 +286,9 @@ impl HotkeyAction {
             FocusPaneUp => "hotkey_focus_pane_up",
             FocusPaneDown => "hotkey_focus_pane_down",
             ToggleMaximizePane => "hotkey_toggle_maximize_pane",
+            // Reuses the menu row's own sentence rather than minting a
+            // parallel key, the way the split actions reuse theirs.
+            MovePaneToNewTab => "pane_to_new_tab",
             FocusSidebarList => "hotkey_focus_sidebar_list",
             ToggleSidebar => "hotkey_toggle_sidebar",
             ToggleSidebarOther => "hotkey_toggle_sidebar_other",
@@ -326,6 +335,7 @@ impl HotkeyAction {
                 | FocusPaneUp
                 | FocusPaneDown
                 | ToggleMaximizePane
+                | MovePaneToNewTab
                 | FocusSidebarList
                 | ToggleSidebar
                 | ToggleSidebarOther

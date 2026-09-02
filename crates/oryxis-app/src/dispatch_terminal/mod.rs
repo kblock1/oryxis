@@ -747,6 +747,16 @@ impl Oryxis {
                     None => paste_trace("resolved", "clipboard unavailable", "", None),
                 }
             }
+            TerminalMessage::ShowPaneHeaderMenu(pane_id) => {
+                // Anchored on the tracked cursor, which is where the
+                // press was: a `MouseArea` reports the button, not the
+                // point. No selection travels, because the header is not
+                // the grid and nothing was selected by clicking it.
+                let at = self.mouse_position;
+                return self.update(Message::Terminal(
+                    TerminalMessage::ShowTerminalContextMenu(pane_id, at.x, at.y, None),
+                ));
+            }
             TerminalMessage::ShowTerminalContextMenu(pane_id, x, y, selection) => {
                 // Focus the right-clicked pane first (standard context-menu
                 // behavior), so all rows act on the same pane: Copy All /
