@@ -571,6 +571,28 @@ pub(crate) struct Pane {
     /// Defaults to `Ephemeral`; the creating site overrides it to `Host` or
     /// `Local` when the pane is referenceable.
     pub origin: PaneOrigin,
+    /// This pane's session ended and the pane is still here, waiting for
+    /// the user to restart it or close it (issue #208).
+    ///
+    /// Set on any pane of a SPLIT tab, and on a LOCAL shell that is a tab
+    /// on its own, whichever origin opened that shell (the picker, a
+    /// saved Local host, a quick-connect one). Not on a lone remote pane:
+    /// that tab is relabelled "(disconnected)" and the auto-reconnect
+    /// sweep picks it up, which is a better answer and only possible
+    /// because it has no siblings.
+    /// Neither of those can serve a split tab, since both are tab-wide
+    /// and `ReconnectTab` rebuilds the tab, taking the live siblings with
+    /// it. So the pane keeps the verdict instead, and the grid draws it.
+    ///
+    /// Cleared by the restart that replaces the session, so a pane that is
+    /// dialling again never shows the card it was raised from.
+    pub ended: bool,
+    /// Which local PTY this pane is currently listening to. Bumped every
+    /// time one is wired in; `LocalPaneEnded` carries the value it was
+    /// armed with, so the exit of a PTY this pane has already replaced
+    /// is discarded instead of declaring a live shell dead. Unused by
+    /// remote panes, which have a transport handle to test instead.
+    pub local_generation: u64,
     /// True while a one-shot `TerminalSyncFlush` timer is armed for this
     /// pane. A DEC `?2026` synchronized update buffers output in vte until
     /// the matching ESU, a 2 MiB overflow, or a host-driven flush; an app
@@ -801,6 +823,8 @@ impl Pane {
             session_log_last_size: None,
             session_log_file: None,
             origin: PaneOrigin::Ephemeral,
+            ended: false,
+            local_generation: 0,
             sync_flush_scheduled: false,
             osc_title: None,
             bell_flash: false,

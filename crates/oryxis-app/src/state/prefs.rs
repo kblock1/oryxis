@@ -491,6 +491,12 @@ pub(crate) struct AppPrefs {
     /// `terminal_hint_mode` setting. `Once` (default) shows each hint a
     /// single time per pane, tracked in-memory on `Pane`.
     pub(crate) hint_mode: crate::util::HintMode,
+    /// What happens to a pane when its session ends (issue #208).
+    /// Persisted as the `pane_end_action` setting. `Prompt` (default)
+    /// keeps the pane and offers restart / close; `Close` drops it.
+    /// A lone REMOTE pane never consults this (it relabels and
+    /// auto-reconnects instead); a lone local shell does.
+    pub(crate) pane_end_action: crate::util::PaneEndAction,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,
     /// up to 8 = aggressive. Each slot gets its own SFTP subsystem
     /// channel on the same SSH connection so they don't fight for the
@@ -701,6 +707,7 @@ impl Default for AppPrefs {
             scrollback_rows: "10000".into(),
             word_delimiters: oryxis_terminal::DEFAULT_WORD_DELIMITERS.into(),
             hint_mode: crate::util::HintMode::default(),
+            pane_end_action: crate::util::PaneEndAction::default(),
             sftp_concurrency: "2".into(),
             sftp_ask_download_dir: false,
             sftp_upload_temp_name: false,
