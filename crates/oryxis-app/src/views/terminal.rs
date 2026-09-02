@@ -946,7 +946,7 @@ impl Oryxis {
                 .into(),
         );
 
-        let mut controls: Vec<Element<'a, Message>> = Vec::with_capacity(2);
+        let mut controls: Vec<Element<'a, Message>> = Vec::with_capacity(3);
         if self.pane_restartable(pane) {
             controls.push(pane_header_button(
                 iced_fonts::lucide::refresh_cw(),
@@ -954,6 +954,15 @@ impl Oryxis {
                 Message::Terminal(TerminalMessage::RestartPane(pane_id)),
             ));
         }
+        // Break this pane out into a tab of its own (issue #208 item 4).
+        // Before close, in the same order the pane's own menu puts them:
+        // the two answers to "this pane should not be here", the one
+        // that keeps the session ahead of the one that ends it.
+        controls.push(pane_header_button(
+            iced_fonts::lucide::external_link(),
+            t("pane_to_new_tab"),
+            Message::Terminal(TerminalMessage::MovePaneToNewTab(pane_id)),
+        ));
         controls.push(pane_header_button(
             iced_fonts::lucide::x(),
             t("close_pane"),
