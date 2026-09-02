@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Côte à côte",
         "pane_rearrange_stacked" => "Empilé",
         "pane_border_inactive" => "Contour des panneaux inactifs",
+        "pane_headers" => "Barre de titre sur chaque panneau",
+        "pane_headers_desc" => "Donne à chaque panneau d'un onglet divisé sa propre barre avec son libellé, son état de connexion et les actions redémarrer et fermer. Un onglet à panneau unique reste inchangé.",
         "pane_gap" => "Espace entre les panneaux",
         "pane_gap_none" => "Aucun",
         "terminal_group_split_panes" => "Panneaux divisés",

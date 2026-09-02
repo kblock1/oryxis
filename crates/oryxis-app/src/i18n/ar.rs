@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "جنبًا إلى جنب",
         "pane_rearrange_stacked" => "فوق بعضها",
         "pane_border_inactive" => "إطار للأجزاء غير النشطة",
+        "pane_headers" => "شريط عنوان لكل جزء",
+        "pane_headers_desc" => "يمنح كل جزء من علامة تبويب مقسّمة شريطًا خاصًا به يحمل اسمه وحالة الاتصال وإجراءي إعادة التشغيل والإغلاق. علامة التبويب ذات الجزء الواحد تبقى كما هي.",
         "pane_gap" => "المسافة بين الأجزاء",
         "pane_gap_none" => "بلا",
         "terminal_group_split_panes" => "الأجزاء المقسّمة",

@@ -348,6 +348,13 @@ impl Oryxis {
                     if self.prefs.pane_border_inactive { "true" } else { "false" },
                 );
             }
+            SettingsMessage::TogglePaneHeaders => {
+                self.prefs.pane_headers = !self.prefs.pane_headers;
+                self.persist_setting(
+                    "pane_headers",
+                    if self.prefs.pane_headers { "true" } else { "false" },
+                );
+            }
             SettingsMessage::OpenTerminalThemeGallery => {
                 self.panels.terminal_theme_gallery = true;
                 // A stale filter from the last visit would open the

@@ -1229,6 +1229,16 @@ impl Oryxis {
                 self.prefs.pane_border_inactive,
                 Message::Settings(SettingsMessage::TogglePaneBorderInactive),
             ),
+            Space::new().height(10),
+            self.nav_toggle_row(
+                crate::i18n::t("pane_headers"),
+                self.prefs.pane_headers,
+                Message::Settings(SettingsMessage::TogglePaneHeaders),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("pane_headers_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
         ]);
 
         use crate::widgets::settings_group_header as gh;

@@ -131,6 +131,13 @@ pub(crate) struct AppPrefs {
     /// pane's accent outline is not affected: with the panes flush there
     /// would otherwise be nothing at all marking where one ends.
     pub(crate) pane_border_inactive: bool,
+    /// Give every pane of a SPLIT tab its own title bar: label, state
+    /// dot, restart, close (issue #208). Persisted as `pane_headers`,
+    /// OFF by default, because the default layout is the one nobody
+    /// asked to change. A single-pane tab never grows one: it has no
+    /// sibling to tell itself apart from, and its end-of-session card
+    /// is the answer it already has.
+    pub(crate) pane_headers: bool,
     /// Gutter between split panes, in pixels, as a string ("0" = flush).
     /// Flush is the default: the seam is grabbable either way, because a
     /// pane hands a strip back to the grid on the edges it shares.
@@ -624,6 +631,7 @@ impl Default for AppPrefs {
             terminal_bg_fit: oryxis_terminal::BgFit::default().as_str().to_string(),
             terminal_bg_dim: 55,
             pane_border_inactive: true,
+            pane_headers: false,
             pane_gap: "0".to_string(),
             keyword_highlight: true,
             highlight_rules: Vec::new(),

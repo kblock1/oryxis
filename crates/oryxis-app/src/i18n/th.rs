@@ -195,6 +195,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "เคียงข้างกัน",
         "pane_rearrange_stacked" => "ซ้อนกัน",
         "pane_border_inactive" => "เส้นขอบบานหน้าต่างที่ไม่ได้ใช้งาน",
+        "pane_headers" => "แถบชื่อบนทุกบานหน้าต่าง",
+        "pane_headers_desc" => "ให้ทุกบานหน้าต่างในแท็บที่แบ่งไว้มีแถบของตัวเอง พร้อมชื่อ สถานะการเชื่อมต่อ และการเริ่มใหม่กับปิด แท็บที่มีบานหน้าต่างเดียวไม่เปลี่ยนแปลง",
         "pane_gap" => "ระยะห่างระหว่างบานหน้าต่าง",
         "pane_gap_none" => "ไม่มี",
         "terminal_group_split_panes" => "บานหน้าต่างที่แบ่ง",

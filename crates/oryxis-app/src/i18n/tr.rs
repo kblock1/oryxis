@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Yan yana",
         "pane_rearrange_stacked" => "Üst üste",
         "pane_border_inactive" => "Etkin olmayan bölmelerin çerçevesi",
+        "pane_headers" => "Her bölmede başlık çubuğu",
+        "pane_headers_desc" => "Bölünmüş bir sekmedeki her bölmeye kendi etiketini, bağlantı durumunu ve yeniden başlatma ile kapatma eylemlerini taşıyan bir çubuk verir. Tek bölmeli sekme değişmez.",
         "pane_gap" => "Bölmeler arası boşluk",
         "pane_gap_none" => "Yok",
         "terminal_group_split_panes" => "Bölünmüş bölmeler",

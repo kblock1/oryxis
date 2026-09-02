@@ -195,6 +195,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Δίπλα δίπλα",
         "pane_rearrange_stacked" => "Σε στοίβα",
         "pane_border_inactive" => "Περίγραμμα ανενεργών τμημάτων",
+        "pane_headers" => "Γραμμή τίτλου σε κάθε τμήμα",
+        "pane_headers_desc" => "Δίνει σε κάθε τμήμα μιας χωρισμένης καρτέλας τη δική του γραμμή με την ονομασία, την κατάσταση σύνδεσης και τις ενέργειες επανεκκίνησης και κλεισίματος. Μια καρτέλα με ένα τμήμα δεν αλλάζει.",
         "pane_gap" => "Κενό μεταξύ τμημάτων",
         "pane_gap_none" => "Κανένα",
         "terminal_group_split_panes" => "Διαιρεμένα τμήματα",

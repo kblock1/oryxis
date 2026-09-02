@@ -15,7 +15,6 @@ pub(crate) use iced::{Background, Border, Color, Element, Length, Padding};
 
 pub(crate) use crate::app::{SftpMessage, TabsMessage, NavigationMessage, Message, Oryxis, AiMessage};
 pub(crate) use crate::state::View;
-pub(crate) use crate::tab_conn_state::TabConnState;
 pub(crate) use crate::theme::{OryxisColors, SYSTEM_UI_SEMIBOLD};
 
 /// One rendered slot of the unified strip, resolved from `tab_order`

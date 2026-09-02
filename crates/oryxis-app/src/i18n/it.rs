@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Affiancati",
         "pane_rearrange_stacked" => "Impilati",
         "pane_border_inactive" => "Contorno dei riquadri inattivi",
+        "pane_headers" => "Barra del titolo su ogni riquadro",
+        "pane_headers_desc" => "Dà a ogni riquadro di una scheda divisa una barra propria con l'etichetta, lo stato della connessione e le azioni riavvia e chiudi. Una scheda con un solo riquadro resta invariata.",
         "pane_gap" => "Spazio tra i riquadri",
         "pane_gap_none" => "Nessuno",
         "terminal_group_split_panes" => "Riquadri divisi",

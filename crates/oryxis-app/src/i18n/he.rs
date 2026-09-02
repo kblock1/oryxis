@@ -195,6 +195,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "זה לצד זה",
         "pane_rearrange_stacked" => "זה מעל זה",
         "pane_border_inactive" => "מסגרת לחלוניות לא פעילות",
+        "pane_headers" => "סרגל כותרת בכל חלונית",
+        "pane_headers_desc" => "מעניק לכל חלונית בלשונית מפוצלת סרגל משלה עם השם, מצב החיבור ופעולות הפעלה מחדש וסגירה. לשונית עם חלונית אחת נשארת כפי שהיא.",
         "pane_gap" => "מרווח בין חלוניות",
         "pane_gap_none" => "ללא",
         "terminal_group_split_panes" => "חלוניות מפוצלות",

@@ -195,6 +195,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "अगल-बगल",
         "pane_rearrange_stacked" => "ऊपर-नीचे",
         "pane_border_inactive" => "निष्क्रिय पैनल की रूपरेखा",
+        "pane_headers" => "हर पैनल पर शीर्षक पट्टी",
+        "pane_headers_desc" => "विभाजित टैब के हर पैनल को उसका अपना बार देता है जिसमें नाम, कनेक्शन स्थिति, तथा पुनः आरंभ और बंद करने की क्रियाएँ होती हैं। एक ही पैनल वाला टैब अपरिवर्तित रहता है।",
         "pane_gap" => "पैनल के बीच अंतर",
         "pane_gap_none" => "कोई नहीं",
         "terminal_group_split_panes" => "विभाजित पैनल",

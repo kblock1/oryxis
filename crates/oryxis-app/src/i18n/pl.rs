@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Obok siebie",
         "pane_rearrange_stacked" => "Pod sobą",
         "pane_border_inactive" => "Obramowanie nieaktywnych paneli",
+        "pane_headers" => "Pasek tytułu na każdym panelu",
+        "pane_headers_desc" => "Nadaje każdemu panelowi podzielonej karty własny pasek z etykietą, stanem połączenia oraz akcjami ponownego uruchomienia i zamknięcia. Karta z jednym panelem pozostaje bez zmian.",
         "pane_gap" => "Odstęp między panelami",
         "pane_gap_none" => "Brak",
         "terminal_group_split_panes" => "Podzielone panele",

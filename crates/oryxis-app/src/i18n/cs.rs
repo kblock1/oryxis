@@ -195,6 +195,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Vedle sebe",
         "pane_rearrange_stacked" => "Pod sebou",
         "pane_border_inactive" => "Obrys neaktivních panelů",
+        "pane_headers" => "Záhlaví u každého panelu",
+        "pane_headers_desc" => "Dá každému panelu rozdělené karty vlastní lištu s názvem, stavem připojení a akcemi restartovat a zavřít. Karta s jedním panelem zůstává beze změny.",
         "pane_gap" => "Mezera mezi panely",
         "pane_gap_none" => "Žádná",
         "terminal_group_split_panes" => "Rozdělené panely",

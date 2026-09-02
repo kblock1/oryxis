@@ -477,6 +477,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("pane_border_inactive") {
                 self.prefs.pane_border_inactive = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("pane_headers") {
+                self.prefs.pane_headers = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("pane_gap") {
                 self.prefs.pane_gap = v;
             }

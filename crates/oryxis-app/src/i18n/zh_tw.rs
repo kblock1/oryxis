@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "左右排列",
         "pane_rearrange_stacked" => "上下排列",
         "pane_border_inactive" => "為非作用中窗格描邊",
+        "pane_headers" => "每個窗格顯示標題列",
+        "pane_headers_desc" => "為分割分頁中的每個窗格提供獨立的標題列，顯示名稱、連線狀態以及重新啟動和關閉動作。僅含一個窗格的分頁維持不變。",
         "pane_gap" => "窗格間距",
         "pane_gap_none" => "無",
         "terminal_group_split_panes" => "分割窗格",

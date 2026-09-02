@@ -11,7 +11,7 @@
 //! presentation. Same one-owner rule as `mouse_binding_owner()`.
 
 use crate::app::Oryxis;
-use crate::state::{PaneOrigin, TerminalTab};
+use crate::state::{Pane, PaneOrigin, TerminalTab};
 
 /// What a tab's FOCUSED pane can say about its transport. Presentation
 /// (a dot color, a text segment) belongs to the callers; nothing here
@@ -50,6 +50,28 @@ pub(crate) enum TabConnState {
     Idle,
 }
 
+impl TabConnState {
+    /// The status dot's colour, `None` when there is nothing to report.
+    ///
+    /// One owner, for the same reason the derivation above is one: the
+    /// strip's chip and a pane's own header both draw this dot, and a
+    /// second inline match is how two surfaces start disagreeing about
+    /// one fact. The status bar deliberately does NOT read this; it
+    /// tints TEXT, and a colour that reads on a dot does not
+    /// necessarily read on a word.
+    pub(crate) fn dot_color(self) -> Option<iced::Color> {
+        let c = crate::theme::OryxisColors::t();
+        match self {
+            TabConnState::Connecting
+            | TabConnState::Reconnecting
+            | TabConnState::NoContact => Some(c.warning),
+            TabConnState::Lost => Some(c.error),
+            TabConnState::Connected => Some(c.success),
+            TabConnState::Idle => None,
+        }
+    }
+}
+
 /// The app's global connect progress, as it applies to ONE tab.
 /// Resolving it is the caller's job because the progress lives on
 /// `Oryxis`, not on the tab, and keeping it out of the derivation is
@@ -64,7 +86,8 @@ pub(crate) enum DialProgress {
     Failed,
 }
 
-/// Derive `tab`'s state.
+/// Derive `tab`'s state, which is its FOCUSED pane's state plus the
+/// three signals that belong to the tab and have no per-pane answer.
 pub(crate) fn derive_conn_state(
     tab: &TerminalTab,
     dial: DialProgress,
@@ -95,11 +118,37 @@ pub(crate) fn derive_conn_state(
     if tab.label.ends_with(" (disconnected)") {
         return TabConnState::Lost;
     }
+    derive_pane_conn_state(tab, pane)
+}
+
+/// Derive ONE pane's state, for the surfaces that describe a pane
+/// rather than a tab (the optional per-pane header, issue #208).
+///
+/// Everything the tab-wide derivation above cannot delegate is already
+/// spent by the time it calls here: a dial in flight belongs to a tab
+/// and carries no pane id, and the "(disconnected)" label suffix is
+/// written on a tab and never on a split one. What is left is the pane
+/// itself, plus `tab` for the one question a pane cannot answer alone
+/// (a plugin-backed transport is a process the TAB owns).
+pub(crate) fn derive_pane_conn_state(tab: &TerminalTab, pane: &Pane) -> TabConnState {
+    // Reached directly by the header, and already spent when the tab
+    // derivation delegates here. Both readings are the same.
+    if pane.connecting {
+        return TabConnState::Reconnecting;
+    }
+    // The verdict the pane recorded for ITSELF (issue #208) outranks
+    // every guess below. It has to: a local shell that exited leaves
+    // `session: None` and keeps `PaneOrigin::Local`, so the origin
+    // branch would answer "nothing to report" about a pane that is
+    // showing the end of its own session.
+    if pane.ended {
+        return TabConnState::Lost;
+    }
     if let Some(session) = pane.session.as_ref() {
         // A split tab never gets the label suffix (the relabel only
         // fires for single-pane tabs, so its live siblings keep the tab
-        // connected), which makes the handle the only witness that the
-        // FOCUSED pane died.
+        // connected), which makes the handle the only witness that this
+        // pane died.
         if !session.is_alive() {
             return TabConnState::Lost;
         }
@@ -123,7 +172,7 @@ pub(crate) fn derive_conn_state(
     }
     if tab.is_plugin_backed() {
         // Live by elimination: a dead plugin tab carries the suffix
-        // handled above.
+        // the tab derivation handles.
         return TabConnState::Connected;
     }
     TabConnState::Idle
@@ -216,6 +265,42 @@ mod tests {
         let mut t = tab("ECS · api (abc12345)");
         t.ssm_keepalive = true;
         assert_eq!(derive_conn_state(&t, DialProgress::None), TabConnState::Connected);
+    }
+
+    /// A pane that recorded the end of its own session reads as lost
+    /// even when nothing else about it changed. A local shell is the
+    /// case that needs it: it keeps `PaneOrigin::Local` and never had a
+    /// handle, so every other branch answers "nothing to report" about
+    /// a pane the user is being offered a restart for.
+    #[test]
+    fn an_ended_pane_reads_as_lost_even_when_it_is_a_local_shell() {
+        let mut t = tab("bash");
+        t.active_mut().origin = PaneOrigin::Local(LocalShellSpec {
+            label: "bash".into(),
+            program: "/bin/bash".into(),
+            args: Vec::new(),
+        });
+        t.active_mut().ended = true;
+        let pane = t.active();
+        assert_eq!(derive_pane_conn_state(&t, pane), TabConnState::Lost);
+        assert_eq!(derive_conn_state(&t, DialProgress::None), TabConnState::Lost);
+    }
+
+    /// The dot is one owner for two surfaces, so the states that must
+    /// show nothing and the states that must show something are pinned
+    /// here rather than in either caller.
+    #[test]
+    fn only_idle_draws_no_status_dot() {
+        assert!(TabConnState::Idle.dot_color().is_none());
+        for state in [
+            TabConnState::Connecting,
+            TabConnState::Reconnecting,
+            TabConnState::NoContact,
+            TabConnState::Connected,
+            TabConnState::Lost,
+        ] {
+            assert!(state.dot_color().is_some(), "{state:?} drew no dot");
+        }
     }
 
     #[test]

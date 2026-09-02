@@ -293,6 +293,7 @@ impl Oryxis {
             | SettingsMessage::TerminalBgFitChanged(..)
             | SettingsMessage::TerminalBgDimChanged(..)
             | SettingsMessage::TogglePaneBorderInactive
+            | SettingsMessage::TogglePaneHeaders
             | SettingsMessage::PaneGapChanged(..)
             | SettingsMessage::OpenTerminalThemeGallery
             | SettingsMessage::CloseTerminalThemeGallery

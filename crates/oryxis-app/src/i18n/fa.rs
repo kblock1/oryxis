@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "کنار هم",
         "pane_rearrange_stacked" => "روی هم",
         "pane_border_inactive" => "خط دور پنل‌های غیرفعال",
+        "pane_headers" => "نوار عنوان روی هر پنل",
+        "pane_headers_desc" => "به هر پنل از یک زبانهٔ تقسیم‌شده نوار مخصوص خودش را می‌دهد با برچسب، وضعیت اتصال و کنش‌های راه‌اندازی مجدد و بستن. زبانه‌ای با یک پنل تغییری نمی‌کند.",
         "pane_gap" => "فاصله بین پنل‌ها",
         "pane_gap_none" => "بدون",
         "terminal_group_split_panes" => "پنل‌های تقسیم‌شده",

@@ -124,6 +124,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Terminal, "scrollback_reset_output", "scrollback reset output activity jump bottom"),
     e(S::Terminal, "bold_bright", "bold bright colors text intensity"),
     e(S::Terminal, "pane_border_inactive", "pane border outline split inactive unfocused separator divider"),
+    e(S::Terminal, "pane_headers", "pane header title bar split label status close restart"),
     e(S::Terminal, "pane_gap", "pane gap gutter spacing split padding between panes"),
     e(S::Terminal, "keyword_highlight", "keyword highlight color url ip path automatic"),
     e(S::Terminal, "highlight_rules", "highlight rules keyword pattern regex color trigger action notify beep sound snippet watch alert error warn"),

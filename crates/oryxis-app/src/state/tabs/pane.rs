@@ -471,6 +471,28 @@ impl Pane {
             PaneOrigin::QuickHost(_) | PaneOrigin::Local(_) | PaneOrigin::Ephemeral => None,
         }
     }
+
+    /// What to CALL this pane: the shell's own title when auto-title is
+    /// on and it set one, else the pane's connection label.
+    ///
+    /// The pane-scoped twin of `TerminalTab::auto_label`, which answers
+    /// the same question for a whole tab and reaches into
+    /// `self.active()` to do it. A pane has no `custom_name` to
+    /// outrank either source, because renaming is a tab gesture.
+    ///
+    /// `auto_title` is resolved by the caller (`Oryxis::tab_auto_title`)
+    /// because it depends on the focused host's override, which a
+    /// `Pane` cannot reach. Every pane of one tab therefore takes that
+    /// tab's answer, which is also what the tab chip does.
+    pub fn display_label(&self, auto_title: bool) -> &str {
+        if auto_title
+            && let Some(t) = self.osc_title.as_deref()
+            && !t.is_empty()
+        {
+            return t;
+        }
+        &self.label
+    }
 }
 
 /// What one highlight rule has done on one pane this session (C6).

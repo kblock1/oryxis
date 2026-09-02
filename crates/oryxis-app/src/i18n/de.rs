@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Nebeneinander",
         "pane_rearrange_stacked" => "Übereinander",
         "pane_border_inactive" => "Umriss inaktiver Bereiche",
+        "pane_headers" => "Titelleiste in jedem Bereich",
+        "pane_headers_desc" => "Gibt jedem Bereich eines geteilten Tabs eine eigene Leiste mit Bezeichnung, Verbindungsstatus sowie Neustart und Schließen. Ein Tab mit nur einem Bereich bleibt unverändert.",
         "pane_gap" => "Abstand zwischen Bereichen",
         "pane_gap_none" => "Keiner",
         "terminal_group_split_panes" => "Geteilte Bereiche",

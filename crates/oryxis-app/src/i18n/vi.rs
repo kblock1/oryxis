@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Cạnh nhau",
         "pane_rearrange_stacked" => "Chồng lên nhau",
         "pane_border_inactive" => "Viền cho khung không hoạt động",
+        "pane_headers" => "Thanh tiêu đề trên mỗi khung",
+        "pane_headers_desc" => "Cho mỗi khung của thẻ đã chia một thanh riêng với nhãn, trạng thái kết nối cùng thao tác khởi động lại và đóng. Thẻ chỉ có một khung không thay đổi.",
         "pane_gap" => "Khoảng cách giữa các khung",
         "pane_gap_none" => "Không",
         "terminal_group_split_panes" => "Khung chia đôi",

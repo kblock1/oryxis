@@ -760,6 +760,32 @@ impl TerminalTab {
         self.pane_grid.panes.values().find(|p| p.id == id)
     }
 
+    /// A pane's rect for HIT-TESTING, which is not the rect it reports.
+    ///
+    /// `bounds_reporter` wraps the terminal canvas, so `Pane::bounds` is
+    /// the BODY. With a header (issue #208) the body no longer starts
+    /// where the pane does, and the strip above it would be a dead zone
+    /// for anything resolving a pane by cursor: an OS file drop and the
+    /// tab-strip drag both land on "which pane is under the pointer".
+    ///
+    /// `headers` is the caller's resolved answer for THIS tab, since a
+    /// tab cannot reach `AppPrefs` and a lone pane never wears one.
+    pub fn pane_hit_bounds(pane: &Pane, headers: bool) -> iced::Rectangle {
+        let b = pane.bounds.get();
+        if !headers {
+            return b;
+        }
+        let h = crate::views::terminal::PANE_HEADER_HEIGHT;
+        iced::Rectangle { y: b.y - h, height: b.height + h, ..b }
+    }
+
+    /// Whether this tab's panes are drawn with headers, given the
+    /// preference. Split-only, so the two hit-test callers and the
+    /// render site cannot disagree about which panes have one.
+    pub fn panes_have_headers(&self, pref: bool) -> bool {
+        pref && self.pane_count() > 1
+    }
+
     /// Number of panes in this tab. `> 1` means the tab is split.
     pub fn pane_count(&self) -> usize {
         self.pane_grid.panes.len()

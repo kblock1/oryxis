@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "左右に並べる",
         "pane_rearrange_stacked" => "上下に並べる",
         "pane_border_inactive" => "非アクティブなペインを枠線で囲む",
+        "pane_headers" => "各ペインにタイトルバーを表示",
+        "pane_headers_desc" => "分割タブの各ペインに、ラベル、接続状態、再起動と閉じる操作を備えた独自のバーを付けます。ペインが 1 つだけのタブは変わりません。",
         "pane_gap" => "ペイン間の余白",
         "pane_gap_none" => "なし",
         "terminal_group_split_panes" => "分割ペイン",

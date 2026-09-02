@@ -253,6 +253,9 @@ pub enum SettingsMessage {
     ToggleCarefulPaste,
     ToggleBoldIsBright,
     TogglePaneBorderInactive,
+    /// Settings: give every pane of a split tab its own title bar
+    /// (issue #208).
+    TogglePaneHeaders,
     PaneGapChanged(String),
     OpenTerminalThemeGallery,
     CloseTerminalThemeGallery,

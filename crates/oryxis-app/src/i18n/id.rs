@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Berdampingan",
         "pane_rearrange_stacked" => "Bertumpuk",
         "pane_border_inactive" => "Garis tepi panel tidak aktif",
+        "pane_headers" => "Bilah judul di setiap panel",
+        "pane_headers_desc" => "Memberi setiap panel pada tab terbagi bilahnya sendiri berisi label, status koneksi, serta tindakan mulai ulang dan tutup. Tab dengan satu panel tidak berubah.",
         "pane_gap" => "Jarak antar panel",
         "pane_gap_none" => "Tidak ada",
         "terminal_group_split_panes" => "Panel terbagi",

@@ -127,11 +127,16 @@ impl Oryxis {
         // the OS owns the drag, so the last known position can be stale.
         // The fallback is never worse than what #106 shipped (it always
         // used the focused pane).
+        // Hit-tested against the pane's WHOLE rect, header included: a
+        // reported rect is the body only, so without this a drop on the
+        // header strip would fall through to the focused pane instead
+        // of the one it was aimed at.
+        let headers = tab.panes_have_headers(self.prefs.pane_headers);
         let rects: Vec<(Uuid, iced::Rectangle)> = tab
             .pane_grid
             .panes
             .values()
-            .map(|p| (p.id, p.bounds.get()))
+            .map(|p| (p.id, crate::state::TerminalTab::pane_hit_bounds(p, headers)))
             .collect();
         let pane_id =
             pane_under(self.mouse_position, &rects).unwrap_or_else(|| tab.active().id);

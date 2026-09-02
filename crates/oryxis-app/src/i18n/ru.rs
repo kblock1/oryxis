@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Рядом",
         "pane_rearrange_stacked" => "Один над другим",
         "pane_border_inactive" => "Контур неактивных панелей",
+        "pane_headers" => "Заголовок у каждой панели",
+        "pane_headers_desc" => "Даёт каждой панели разделённой вкладки собственную строку с названием, состоянием подключения, а также перезапуском и закрытием. Вкладка с одной панелью не меняется.",
         "pane_gap" => "Отступ между панелями",
         "pane_gap_none" => "Нет",
         "terminal_group_split_panes" => "Разделённые панели",

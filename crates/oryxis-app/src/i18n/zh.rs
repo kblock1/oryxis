@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "左右排列",
         "pane_rearrange_stacked" => "上下排列",
         "pane_border_inactive" => "为非活动窗格描边",
+        "pane_headers" => "每个窗格显示标题栏",
+        "pane_headers_desc" => "为拆分标签页中的每个窗格提供独立的标题栏，显示名称、连接状态以及重启和关闭操作。仅含一个窗格的标签页保持不变。",
         "pane_gap" => "窗格间距",
         "pane_gap_none" => "无",
         "terminal_group_split_panes" => "分割窗格",

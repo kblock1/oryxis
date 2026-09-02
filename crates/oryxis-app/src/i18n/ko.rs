@@ -192,6 +192,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "좌우 배치",
         "pane_rearrange_stacked" => "상하 배치",
         "pane_border_inactive" => "비활성 창 테두리",
+        "pane_headers" => "각 창에 제목 표시줄",
+        "pane_headers_desc" => "분할된 탭의 각 창에 이름, 연결 상태, 다시 시작 및 닫기 동작을 담은 자체 표시줄을 제공합니다. 창이 하나뿐인 탭은 그대로입니다.",
         "pane_gap" => "창 사이 간격",
         "pane_gap_none" => "없음",
         "terminal_group_split_panes" => "분할 창",

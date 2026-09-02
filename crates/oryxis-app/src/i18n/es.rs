@@ -191,6 +191,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pane_rearrange_side_by_side" => "Lado a lado",
         "pane_rearrange_stacked" => "Apilado",
         "pane_border_inactive" => "Contorno en paneles inactivos",
+        "pane_headers" => "Barra de título en cada panel",
+        "pane_headers_desc" => "Da a cada panel de una pestaña dividida su propia barra con la etiqueta, el estado de la conexión y las acciones de reiniciar y cerrar. Una pestaña con un solo panel no cambia.",
         "pane_gap" => "Espacio entre paneles",
         "pane_gap_none" => "Ninguno",
         "terminal_group_split_panes" => "Paneles divididos",
