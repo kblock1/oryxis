@@ -272,17 +272,41 @@ pub(crate) fn context_menu_item<'a>(
     msg: Message,
     color: Color,
 ) -> Element<'a, Message> {
+    context_menu_item_chord(icon, label, msg, color, None)
+}
+
+/// [`context_menu_item`] with the row's keyboard chord on the trailing
+/// edge, which is the only place a chord is ever discovered by someone
+/// who does not already know it.
+///
+/// The chip is a LABEL and not a second door: the row still fires its
+/// own message, so an action the terminal WIDGET performs from its
+/// canvas state (`HotkeyAction::widget_dispatched`) can advertise the
+/// chord that reaches it without the click having to travel that way.
+pub(crate) fn context_menu_item_chord<'a>(
+    icon: impl Into<crate::os_icon::BrandIcon>,
+    label: &'a str,
+    msg: Message,
+    color: Color,
+    chord: Option<String>,
+) -> Element<'a, Message> {
+    let mut row = vec![
+        icon.into().view(14.0, color),
+        Space::new().width(8).into(),
+        text(label).size(12).color(OryxisColors::t().text_primary).into(),
+    ];
+    if let Some(chord) = chord.filter(|c| !c.is_empty()) {
+        // The gap is elastic so every chip in a menu lines up on the
+        // trailing edge whatever its label is long, and it survives RTL
+        // because `dir_row` reverses the whole sequence.
+        row.push(Space::new().width(Length::Fill).into());
+        row.push(Space::new().width(16).into());
+        row.push(text(chord).size(11).color(OryxisColors::t().text_muted).into());
+    }
     button(
-        container(
-            dir_row(vec![
-                icon.into().view(14.0, color),
-                Space::new().width(8).into(),
-                text(label).size(12).color(OryxisColors::t().text_primary).into(),
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        .width(Length::Fill)
-        .align_x(dir_align_x()),
+        container(dir_row(row).align_y(iced::Alignment::Center))
+            .width(Length::Fill)
+            .align_x(dir_align_x()),
     )
     .on_press(msg)
     .width(Length::Fill)

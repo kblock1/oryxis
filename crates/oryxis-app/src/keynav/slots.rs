@@ -529,6 +529,31 @@ impl crate::app::Oryxis {
         )
     }
 
+    /// [`Self::menu_item`] carrying the action's chord on the trailing
+    /// edge, read from the LIVE binding map so a rebind is what the row
+    /// advertises and macOS shows Cmd. An action nobody has bound drops
+    /// the chip instead of showing an empty one.
+    pub(crate) fn menu_item_hotkey<'a>(
+        &self,
+        icon: impl Into<crate::os_icon::BrandIcon>,
+        label: &'a str,
+        msg: Message,
+        color: iced::Color,
+        action: crate::hotkeys::HotkeyAction,
+    ) -> iced::Element<'a, Message> {
+        let chord = self
+            .hotkey_bindings
+            .get(&action)
+            .and_then(|b| b.badges())
+            .map(|badges| badges.join("+"));
+        self.modal_nav_slot(
+            RowAction::activate(msg.clone()),
+            4.0,
+            false,
+            crate::widgets::context_menu_item_chord(icon, label, msg, color, chord),
+        )
+    }
+
     /// Owned-label sibling of [`Self::menu_item`]: for labels built at
     /// render time (counts, substitutions). The label `String` moves
     /// into the returned element, so there is no borrow to dangle.

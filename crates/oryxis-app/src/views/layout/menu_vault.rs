@@ -1110,20 +1110,22 @@ impl Oryxis {
         // (the app can't read the widget's live selection); shown
         // only when something was selected.
         if let Some(text) = selection {
-            items = items.push(self.menu_item(
+            items = items.push(self.menu_item_hotkey(
                 iced_fonts::lucide::copy(),
                 crate::i18n::t("terminal_copy"),
                 Message::Terminal(TerminalMessage::TerminalCopySelection(text.clone())),
                 OryxisColors::t().text_secondary,
+                crate::hotkeys::HotkeyAction::TerminalCopy,
             ));
             // Same gesture as the Ctrl+Shift+X chord. Inside the
             // has-a-selection branch: with nothing selected it would just
             // duplicate the plain "Paste" row below it.
-            items = items.push(self.menu_item(
+            items = items.push(self.menu_item_hotkey(
                 iced_fonts::lucide::clipboard_list(),
                 crate::i18n::t("hotkey_terminal_paste_selection"),
                 Message::Terminal(TerminalMessage::TerminalPasteSelection(pane_id, text.clone().into())),
                 OryxisColors::t().text_secondary,
+                crate::hotkeys::HotkeyAction::TerminalPasteSelection,
             ));
         }
         items = items
@@ -1144,11 +1146,12 @@ impl Oryxis {
                 Message::Terminal(TerminalMessage::TerminalCopyScreen(pane_id)),
                 OryxisColors::t().text_secondary,
             ))
-            .push(self.menu_item(
+            .push(self.menu_item_hotkey(
                 iced_fonts::lucide::clipboard_paste(),
                 crate::i18n::t("terminal_paste"),
                 Message::Terminal(TerminalMessage::TerminalPasteFromClipboard),
                 OryxisColors::t().text_secondary,
+                crate::hotkeys::HotkeyAction::TerminalPaste,
             ))
             .push(self.menu_item(
                 iced_fonts::lucide::eraser(),

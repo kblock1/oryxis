@@ -95,6 +95,12 @@ impl Oryxis {
             // Host labels and identity names on one line, plus the
             // "Enter to send" hint under them.
             OverlayContent::PasswordSuggest { .. } => 260.0,
+            // The clipboard rows carry their chord on the trailing edge
+            // (issue #187), so the widest label and the longest chord
+            // have to fit on one line together: at 150 the paste-selection
+            // row wrapped and squeezed its chord out of existence, which
+            // is the opposite of what showing chords is for.
+            OverlayContent::TerminalContextMenu(..) => 265.0,
             _ => 150.0,
         }
     }
