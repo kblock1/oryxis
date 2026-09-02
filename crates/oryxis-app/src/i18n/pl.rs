@@ -731,6 +731,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Zapisuje czasy wyjścia i zmiany rozmiaru terminala, aby eksportować sesje jako odtworzenia asciicast (.cast). Wyłączone zapisuje zwykły dziennik wyjścia.",
         "session_log_compress" => "Kompresuj nagrania",
         "setting_session_log_compress_desc" => "Kompresuje nagrane wyjście przed zaszyfrowaniem. Długie sesje zajmują ułamek miejsca.",
+        "session_log_file" => "Zapisuj także plik tekstowy",
+        "setting_session_log_file_desc" => "Kopiuje nagranie do pliku tekstowego w trakcie sesji, aby śledzić je gdzie indziej albo komuś przekazać. Ten plik nie jest szyfrowany, inaczej niż nagranie w sejfie.",
         "connection_history" => "Historia połączeń",
         "setting_connection_history_desc" => "Zapisuje zdarzenia połączeń (połączenia, rozłączenia, błędy uwierzytelniania, błędy) w sejfie.",
         "session_log_default" => "Domyślnie",

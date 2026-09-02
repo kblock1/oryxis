@@ -745,6 +745,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Ukládá časování výstupu a změny velikosti terminálu, aby šly relace exportovat jako asciicast (.cast) záznamy. Vypnuto ukládá jen prostý výstup.",
         "session_log_compress" => "Komprimovat záznamy",
         "setting_session_log_compress_desc" => "Komprimuje zaznamenaný výstup před zašifrováním. Dlouhé relace zaberou zlomek místa.",
+        "session_log_file" => "Zapisovat i textový soubor",
+        "setting_session_log_file_desc" => "Zrcadlí záznam do textového souboru už během relace, abyste ho mohli sledovat jinde nebo někomu předat. Tento soubor není šifrovaný, na rozdíl od záznamu v trezoru.",
         "connection_history" => "Historie připojení",
         "setting_connection_history_desc" => "Zaznamenává události připojení (připojení, odpojení, selhání ověření, chyby) do trezoru.",
         "session_log_default" => "Výchozí",

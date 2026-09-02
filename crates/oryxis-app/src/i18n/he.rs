@@ -745,6 +745,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "שמירת תזמוני פלט ושינויי גודל טרמינל כדי שאפשר יהיה לייצא סשנים כשחזורי asciicast (.cast). במצב כבוי נשמר יומן פלט רגיל.",
         "session_log_compress" => "דחיסת הקלטות",
         "setting_session_log_compress_desc" => "דחיסת הפלט המוקלט לפני ההצפנה. סשנים ארוכים תופסים חלק קטן מהמקום.",
+        "session_log_file" => "כתוב גם קובץ טקסט רגיל",
+        "setting_session_log_file_desc" => "משכפל את ההקלטה לקובץ טקסט בזמן שהסשן רץ, למעקב ממקום אחר או להעברה למישהו. הקובץ הזה אינו מוצפן, בניגוד להקלטה בכספת.",
         "connection_history" => "היסטוריית חיבורים",
         "setting_connection_history_desc" => "תיעוד אירועי חיבור (התחברויות, ניתוקים, כשלי אימות, שגיאות) לכספת.",
         "session_log_default" => "ברירת מחדל",

@@ -726,6 +726,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Lưu thời gian đầu ra và thay đổi kích thước terminal để xuất phiên dưới dạng phát lại asciicast (.cast). Tắt sẽ chỉ ghi nhật ký đầu ra đơn giản.",
         "session_log_compress" => "Nén bản ghi",
         "setting_session_log_compress_desc" => "Nén đầu ra đã ghi trước khi mã hóa. Phiên dài chỉ chiếm một phần nhỏ dung lượng.",
+        "session_log_file" => "Ghi thêm ra tệp văn bản",
+        "setting_session_log_file_desc" => "Sao bản ghi sang một tệp văn bản ngay trong lúc phiên đang chạy, để theo dõi ở nơi khác hoặc đưa cho người khác. Tệp đó không được mã hóa, khác với bản ghi trong két.",
         "connection_history" => "Lịch sử kết nối",
         "setting_connection_history_desc" => "Ghi các sự kiện kết nối (kết nối, ngắt kết nối, lỗi xác thực, lỗi) vào kho.",
         "session_log_default" => "Mặc định",

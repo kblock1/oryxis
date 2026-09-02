@@ -1997,6 +1997,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Salva il timing dell'output e i ridimensionamenti del terminale per esportare le sessioni come replay asciicast (.cast). Disattivato registra un semplice log dell'output.",
         "session_log_compress" => "Comprimi registrazioni",
         "setting_session_log_compress_desc" => "Comprime l'output registrato prima della cifratura. Le sessioni lunghe occupano una frazione dello spazio.",
+        "session_log_file" => "Scrivi anche un file di testo",
+        "setting_session_log_file_desc" => "Rispecchia la registrazione in un file di testo mentre la sessione è in corso, per seguirla altrove o consegnarla a qualcuno. Quel file non è cifrato, a differenza della registrazione nella cassaforte.",
         "connection_history" => "Cronologia connessioni",
         "setting_connection_history_desc" => "Registra gli eventi di connessione (connessioni, disconnessioni, errori di autenticazione, errori) nel vault.",
         "session_log_default" => "Predefinito",

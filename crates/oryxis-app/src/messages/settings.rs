@@ -523,6 +523,12 @@ pub enum SettingsMessage {
     SettingToggleSessionLogFull,
     /// Toggle deflate compression of recorded chunks at flush time.
     SettingToggleSessionLogCompress,
+    /// Toggle the plain-text mirror of a live recording (issue #187).
+    SettingToggleSessionLogFile,
+    /// Pick the folder those plain-text session logs are written to.
+    PickSessionLogFileDir,
+    /// The folder the picker came back with (`None` = cancelled).
+    SessionLogFileDirPicked(Option<String>),
     /// Toggle the global "record connection events" (history) setting.
     SettingToggleConnectionHistory,
     // ── Login automations (issue #122) ──

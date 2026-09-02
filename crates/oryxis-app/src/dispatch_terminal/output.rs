@@ -294,6 +294,33 @@ impl Oryxis {
         // simple = one untimed chunk per flush, the plain log of old.
         let full = self.prefs.session_log_full;
         let compress = self.prefs.session_log_compress;
+        // The plain-text mirror (issue #187): the path each recording
+        // writes to, resolved once and parked on the pane, so a name
+        // carrying the start time cannot move mid-session. Empty while
+        // the mirror is off, which is what keeps the write below to a
+        // map lookup on the ordinary path.
+        let mirror = self.prefs.session_log_file;
+        let mut mirror_paths: std::collections::HashMap<uuid::Uuid, std::path::PathBuf> =
+            std::collections::HashMap::new();
+        if mirror {
+            // Resolved BEFORE the pane loop borrows `self.tabs`: the
+            // name needs the host's label, which lives on `self`.
+            let mut resolved: Vec<(usize, usize, std::path::PathBuf)> = Vec::new();
+            for (ti, tab) in self.tabs.iter().enumerate() {
+                for (pi, pane) in tab.pane_grid.panes.values().enumerate() {
+                    if let Some(log_id) = pane.session_log_id
+                        && pane.session_log_file.is_none()
+                    {
+                        resolved.push((ti, pi, self.session_log_file_path(&log_id, &pane.origin)));
+                    }
+                }
+            }
+            for (ti, pi, path) in resolved {
+                if let Some(pane) = self.tabs[ti].pane_grid.panes.values_mut().nth(pi) {
+                    pane.session_log_file = Some(path);
+                }
+            }
+        }
         // Replay rows per pane, in stream order (chunks interleaved
         // with resizes; see `session_log_rows`).
         let mut pending: Vec<(uuid::Uuid, PendingSessionRow)> = Vec::new();
@@ -302,6 +329,9 @@ impl Oryxis {
                 let Some(log_id) = pane.session_log_id else {
                     continue;
                 };
+                if mirror && let Some(path) = pane.session_log_file.clone() {
+                    mirror_paths.insert(log_id, path);
+                }
                 // Geometry fallback on the flush cadence: catches a
                 // resize with NO output after it (the primary capture
                 // point is the output batch itself, which stamps the
@@ -449,11 +479,18 @@ impl Oryxis {
         // attempted, every later byte was dropped on the floor, and the
         // user was never told their recording had stopped working.
         let mut append_failed = false;
+        // Collected here and written after the vault loop: the mirror is
+        // a copy of what was STORED, so it never carries a byte the
+        // recording did not, redaction included.
+        let mut mirror_writes: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
         if let Some(vault) = &self.vault {
             for (log_id, row) in pending {
                 match row {
                     PendingSessionRow::Chunk(offset_ms, bytes) => {
                         let scrubbed = crate::session_redact::redact_secrets(&bytes);
+                        if let Some(path) = mirror_paths.get(&log_id) {
+                            mirror_writes.push((path.clone(), scrubbed.to_vec()));
+                        }
                         if let Err(e) = vault.append_session_data(
                             &log_id, &scrubbed, offset_ms, compress,
                         ) {
@@ -470,6 +507,14 @@ impl Oryxis {
                         }
                     }
                 }
+            }
+        }
+        // A failing mirror is reported and nothing else: the recording
+        // in the vault is the record, and a full disk or a folder the
+        // user moved must not take the session's own log down with it.
+        for (path, bytes) in mirror_writes {
+            if let Err(e) = self.append_session_log_file(&path, &bytes) {
+                tracing::warn!("session log file append failed for {}: {e}", path.display());
             }
         }
         if append_failed {

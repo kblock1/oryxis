@@ -24,6 +24,7 @@ mod drop;
 mod keyboard;
 mod links;
 mod output;
+mod session_file;
 mod triggers;
 
 pub(crate) use links::LinkConfirmCard;

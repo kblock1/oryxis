@@ -2011,6 +2011,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "儲存輸出時序和終端機尺寸變化，以便將工作階段匯出為 asciicast (.cast) 重播。關閉時僅記錄純輸出。",
         "session_log_compress" => "壓縮錄製內容",
         "setting_session_log_compress_desc" => "在加密前壓縮錄製的輸出。長工作階段只會佔用一小部分空間。",
+        "session_log_file" => "同時寫入純文字檔",
+        "setting_session_log_file_desc" => "工作階段進行時把錄製內容同步寫入文字檔，方便在別處追蹤或交給他人。該檔案不加密，與保險庫中的錄製不同。",
         "connection_history" => "連線歷史記錄",
         "setting_connection_history_desc" => "將連線事件（連線、中斷、驗證失敗、錯誤）記錄到保險庫。",
         "session_log_default" => "預設",

@@ -34,6 +34,48 @@ impl Oryxis {
                     if self.prefs.session_log_compress { "true" } else { "false" },
                 );
             }
+            SettingsMessage::SettingToggleSessionLogFile => {
+                self.prefs.session_log_file = !self.prefs.session_log_file;
+                self.persist_setting(
+                    "session_log_file",
+                    if self.prefs.session_log_file { "true" } else { "false" },
+                );
+                // Switching it off mid-session forgets the file every
+                // live recording had picked, so switching it back on
+                // starts a new one rather than resuming a file whose
+                // middle is missing.
+                if !self.prefs.session_log_file {
+                    for tab in &mut self.tabs {
+                        for pane in tab.pane_grid.panes.values_mut() {
+                            pane.session_log_file = None;
+                        }
+                    }
+                }
+            }
+            SettingsMessage::PickSessionLogFileDir => {
+                return Ok(Task::perform(
+                    tokio::task::spawn_blocking(|| {
+                        rfd::FileDialog::new()
+                            .set_title("Session log folder")
+                            .pick_folder()
+                            .map(|p| p.display().to_string())
+                    }),
+                    |res| {
+                        Message::Settings(SettingsMessage::SessionLogFileDirPicked(
+                            res.ok().flatten(),
+                        ))
+                    },
+                ));
+            }
+            SettingsMessage::SessionLogFileDirPicked(dir) => {
+                if let Some(dir) = dir {
+                    self.persist_setting("session_log_file_dir", &dir);
+                    self.prefs.session_log_file_dir = Some(dir);
+                    // The live recordings keep writing where they
+                    // already are: a file cut in half at a folder change
+                    // is worse than one that finishes where it started.
+                }
+            }
             SettingsMessage::SettingToggleConnectionHistory => {
                 self.prefs.connection_history = !self.prefs.connection_history;
                 self.persist_setting(

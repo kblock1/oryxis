@@ -736,6 +736,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "يحفظ توقيت المخرجات وتغييرات حجم الطرفية لتصدير الجلسات كإعادة تشغيل asciicast (.cast). عند الإيقاف يُسجل سجل مخرجات بسيط.",
         "session_log_compress" => "ضغط التسجيلات",
         "setting_session_log_compress_desc" => "يضغط المخرجات المسجلة قبل التشفير. الجلسات الطويلة تشغل جزءًا يسيرًا من المساحة.",
+        "session_log_file" => "اكتب أيضًا ملفًا نصيًا",
+        "setting_session_log_file_desc" => "ينسخ التسجيل إلى ملف نصي أثناء عمل الجلسة، لمتابعته من مكان آخر أو تسليمه لشخص ما. هذا الملف غير مشفر، بخلاف التسجيل داخل الخزنة.",
         "connection_history" => "سجل الاتصالات",
         "setting_connection_history_desc" => "تسجيل أحداث الاتصال (الاتصالات، قطع الاتصال، فشل المصادقة، الأخطاء) في الخزنة.",
         "session_log_default" => "افتراضي",

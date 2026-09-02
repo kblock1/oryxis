@@ -189,6 +189,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Security, "session_logging", "session logging record terminal history"),
     e(S::Security, "session_log_full", "detailed recording replay full session cast"),
     e(S::Security, "session_log_compress", "compress recordings gzip session log size"),
+    e(
+        S::Security,
+        "session_log_file",
+        "session log plain text file live append tail export unencrypted",
+    ),
     e(S::Security, "connection_history", "connection history log recent hosts track"),
     e(S::Security, "log_retention_label", "log retention auto delete purge age cleanup"),
     e(S::Security, "log_size_cap_label", "log size cap limit disk space quota recording storage"),

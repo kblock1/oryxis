@@ -558,6 +558,16 @@ pub(crate) struct AppPrefs {
     /// Deflate recorded chunks before sealing them (order matters:
     /// ciphertext doesn't compress). Long sessions shrink 5-20x.
     pub(crate) session_log_compress: bool,
+    /// Mirror what is being recorded into a plain text file as the
+    /// session runs (issue #187). Off by default and gated by the
+    /// recording itself, so the per-host override still decides WHICH
+    /// sessions produce one; the file is not encrypted, which is the
+    /// whole point of the option and what its description says.
+    /// Persisted as `session_log_file`.
+    pub(crate) session_log_file: bool,
+    /// Folder those files live in; `None` = `~/.oryxis/session-logs/`.
+    /// Persisted as `session_log_file_dir` (a set value only).
+    pub(crate) session_log_file_dir: Option<String>,
     /// Whether connection events (connect / disconnect / auth failure /
     /// error) are recorded to the vault log. Gates every `add_log` site.
     pub(crate) connection_history: bool,
@@ -709,6 +719,8 @@ impl Default for AppPrefs {
             session_logging: false,
             session_log_full: true,
             session_log_compress: true,
+            session_log_file: false,
+            session_log_file_dir: None,
             connection_history: false,
             logs_retention: "off".into(),
             session_log_max_bytes: None,

@@ -1998,6 +1998,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Speichert Ausgabe-Timing und Terminal-Größenänderungen, damit Sitzungen als asciicast-Replays (.cast) exportiert werden können. Aus zeichnet ein einfaches Ausgabeprotokoll auf.",
         "session_log_compress" => "Aufzeichnungen komprimieren",
         "setting_session_log_compress_desc" => "Komprimiert die aufgezeichnete Ausgabe vor der Verschlüsselung. Lange Sitzungen belegen nur einen Bruchteil des Speicherplatzes.",
+        "session_log_file" => "Zusätzlich eine Textdatei schreiben",
+        "setting_session_log_file_desc" => "Spiegelt die Aufzeichnung während der Sitzung in eine Textdatei, zum Mitlesen anderswo oder zum Weitergeben. Diese Datei ist nicht verschlüsselt, anders als die Aufzeichnung im Tresor.",
         "connection_history" => "Verbindungsverlauf",
         "setting_connection_history_desc" => "Zeichnet Verbindungsereignisse (Verbindungen, Trennungen, Authentifizierungsfehler, Fehler) im Tresor auf.",
         "session_log_default" => "Standard",

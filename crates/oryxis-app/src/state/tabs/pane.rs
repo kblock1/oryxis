@@ -562,6 +562,11 @@ pub(crate) struct Pane {
     /// appends a resize mark (output-batch path, or the flush-cadence
     /// fallback for a resize with no output after it).
     pub session_log_last_size: Option<(u16, u16)>,
+    /// Plain-text mirror of this recording on disk, resolved on the
+    /// first flush that has bytes for it and kept for the rest of the
+    /// session so the name cannot drift mid-recording. `None` while the
+    /// mirror is off, or before the first flush.
+    pub session_log_file: Option<std::path::PathBuf>,
     /// What this pane reconnects to when restored from a saved session group.
     /// Defaults to `Ephemeral`; the creating site overrides it to `Host` or
     /// `Local` when the pane is referenceable.
@@ -794,6 +799,7 @@ impl Pane {
             session_log_marks: Vec::new(),
             session_log_resizes: Vec::new(),
             session_log_last_size: None,
+            session_log_file: None,
             origin: PaneOrigin::Ephemeral,
             sync_flush_scheduled: false,
             osc_title: None,
@@ -844,6 +850,10 @@ impl Pane {
         self.session_log_marks.clear();
         self.session_log_resizes.clear();
         self.session_log_last_size = None;
+        // A reconnect reuses the pane and starts a NEW recording, so the
+        // mirror starts a new file too rather than appending the next
+        // session onto the end of the last one.
+        self.session_log_file = None;
     }
 }
 

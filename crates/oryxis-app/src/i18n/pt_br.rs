@@ -700,6 +700,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Guarda o timing da saída e os redimensionamentos do terminal para exportar sessões como replays asciicast (.cast). Desligado grava um log simples da saída.",
         "session_log_compress" => "Comprimir gravações",
         "setting_session_log_compress_desc" => "Comprime a saída gravada antes de criptografar. Sessões longas ocupam uma fração do espaço.",
+        "session_log_file" => "Gravar também em arquivo de texto",
+        "setting_session_log_file_desc" => "Espelha a gravação em um arquivo de texto enquanto a sessão roda, para acompanhar de fora ou entregar a alguém. Esse arquivo não é criptografado, diferente da gravação no cofre.",
         "connection_history" => "Histórico de conexões",
         "setting_connection_history_desc" => "Grava eventos de conexão (conexões, desconexões, falhas de autenticação, erros) no cofre.",
         "session_log_default" => "Padrão",

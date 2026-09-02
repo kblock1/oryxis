@@ -1221,6 +1221,13 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("session_log_compress") {
                 self.prefs.session_log_compress = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("session_log_file") {
+                self.prefs.session_log_file = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("session_log_file_dir") {
+                self.prefs.session_log_file_dir =
+                    (!v.trim().is_empty()).then(|| v.trim().to_string());
+            }
             if let Ok(Some(v)) = vault.get_setting("connection_history") {
                 self.prefs.connection_history = v == "true";
             }

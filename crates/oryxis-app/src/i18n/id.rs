@@ -726,6 +726,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Menyimpan pewaktuan keluaran dan perubahan ukuran terminal agar sesi dapat diekspor sebagai replay asciicast (.cast). Nonaktif merekam log keluaran biasa.",
         "session_log_compress" => "Kompres rekaman",
         "setting_session_log_compress_desc" => "Mengompres keluaran yang direkam sebelum dienkripsi. Sesi panjang memakai sebagian kecil ruang.",
+        "session_log_file" => "Tulis juga berkas teks biasa",
+        "setting_session_log_file_desc" => "Menyalin rekaman ke berkas teks selagi sesi berjalan, untuk dipantau di tempat lain atau diserahkan ke orang lain. Berkas itu tidak dienkripsi, tidak seperti rekaman di brankas.",
         "connection_history" => "Riwayat koneksi",
         "setting_connection_history_desc" => "Rekam peristiwa koneksi (koneksi, pemutusan, kegagalan autentikasi, kesalahan) ke vault.",
         "session_log_default" => "Bawaan",

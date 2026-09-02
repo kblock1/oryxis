@@ -726,6 +726,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_session_log_full_desc" => "Oturumların asciicast (.cast) tekrarı olarak dışa aktarılabilmesi için çıktı zamanlamasını ve terminal boyut değişikliklerini saklar. Kapalıyken düz bir çıktı günlüğü kaydedilir.",
         "session_log_compress" => "Kayıtları sıkıştır",
         "setting_session_log_compress_desc" => "Kaydedilen çıktıyı şifrelemeden önce sıkıştırır. Uzun oturumlar çok daha az yer kaplar.",
+        "session_log_file" => "Ayrıca düz metin dosyası yaz",
+        "setting_session_log_file_desc" => "Oturum sürerken kaydı bir metin dosyasına da yazar; başka bir yerden izlemek veya birine vermek için. Bu dosya, kasadaki kaydın aksine şifrelenmez.",
         "connection_history" => "Bağlantı geçmişi",
         "setting_connection_history_desc" => "Bağlantı olaylarını (bağlantılar, kesilmeler, kimlik doğrulama hataları, hatalar) kasaya kaydeder.",
         "session_log_default" => "Varsayılan",

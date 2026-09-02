@@ -663,6 +663,49 @@ impl Oryxis {
         panel_section(privacy_rows)
     }
 
+    /// Sub-row for the plain-text session-log folder, shown only while
+    /// the mirror is on: the effective folder (default
+    /// `~/.oryxis/session-logs/`) with a Browse button, indented like
+    /// the other nested sub-options. Sibling of the command-history
+    /// folder row in Settings > Terminal.
+    fn session_log_dir_row(&self) -> Element<'_, Message> {
+        if !self.prefs.session_log_file {
+            return Space::new().into();
+        }
+        let indent = if crate::i18n::is_rtl_layout() {
+            Padding { right: 22.0, ..Padding::ZERO }
+        } else {
+            Padding { left: 22.0, ..Padding::ZERO }
+        };
+        let dir = self.session_log_file_dir().display().to_string();
+        let change = self.settings_nav_slot(
+            crate::keynav::RowAction::activate(Message::Settings(
+                SettingsMessage::PickSessionLogFileDir,
+            )),
+            8.0,
+            crate::widgets::styled_button_opt(
+                crate::i18n::t("browse"),
+                Some(Message::Settings(SettingsMessage::PickSessionLogFileDir)),
+                OryxisColors::t().accent,
+            ),
+        );
+        container(
+            dir_row(vec![
+                text(dir)
+                    .size(12)
+                    .color(OryxisColors::t().text_muted)
+                    .width(Length::Fill)
+                    .into(),
+                Space::new().width(10).into(),
+                change,
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 8.0, ..indent })
+        .width(Length::Fill)
+        .into()
+    }
+
     /// Logging card: session recording (+ its sub-options), the
     /// connection-history toggle and the retention picker, one
     /// logging theme in a single card.
@@ -704,7 +747,23 @@ impl Oryxis {
                 .push(
                     text(t("setting_session_log_compress_desc"))
                         .size(11).color(OryxisColors::t().text_muted),
-                );
+                )
+                // The plain-text mirror (issue #187). Nested under the
+                // recording rather than standing on its own, because it
+                // writes what the recording captures: the per-host
+                // override still decides which sessions produce a file.
+                .push(Space::new().height(8))
+                .push(self.nav_toggle_row(
+                    crate::i18n::t("session_log_file"),
+                    self.prefs.session_log_file,
+                    Message::Settings(SettingsMessage::SettingToggleSessionLogFile),
+                ))
+                .push(Space::new().height(4))
+                .push(
+                    text(t("setting_session_log_file_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                )
+                .push(self.session_log_dir_row());
         }
         // Session recording, connection history and the retention
         // window are one logging theme, so they share a single card
