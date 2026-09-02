@@ -40,7 +40,8 @@ impl Oryxis {
                     files.rename = None;
                     files.new_entry = None;
                     files.path_history_open = false;
-                    files.selected = None;
+                    files.selected.clear();
+                    files.selection_anchor = None;
                     files.last_click = None;
                 }
             }

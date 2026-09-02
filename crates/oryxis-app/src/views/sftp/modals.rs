@@ -9,33 +9,11 @@ use iced::widget::{column, row};
 pub(crate) fn delete_confirm_modal<'a>(
     targets: &[crate::state::SftpDeleteTarget],
 ) -> Element<'a, Message> {
-    let (title, detail) = if targets.len() == 1 {
-        let target = &targets[0];
-        let basename = target
-            .path
-            .rsplit(['/', '\\'])
-            .find(|s| !s.is_empty())
-            .unwrap_or(&target.path)
-            .to_string();
-        let detail = if target.is_dir {
-            format!("\"{}\", {}", basename, t("folder_and_contents"))
-        } else {
-            format!("\"{}\"", basename)
-        };
-        (t("delete_item_question").to_string(), detail)
-    } else {
-        let folder_count = targets.iter().filter(|t| t.is_dir).count();
-        let file_count = targets.len() - folder_count;
-        let detail = match (folder_count, file_count) {
-            (0, n) => format!("{} {}", n, t("files_lower")),
-            (n, 0) => format!("{} {}", n, t("folders_recursive_lower")),
-            (f, fi) => format!("{} {} {} {} {}", f, t("folders_recursive_lower"), t("and"), fi, t("files_lower")),
-        };
-        (
-            t("delete_n_items_question").replacen("{n}", &targets.len().to_string(), 1),
-            detail,
-        )
-    };
+    let owned: Vec<(&str, bool)> = targets
+        .iter()
+        .map(|t| (t.path.as_str(), t.is_dir))
+        .collect();
+    let (title, detail) = crate::sftp_helpers::delete_confirm_copy(&owned);
     let dialog = container(
         column![
             text(title).size(16).color(OryxisColors::t().text_primary),

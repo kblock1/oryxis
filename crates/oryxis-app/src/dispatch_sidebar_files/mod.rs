@@ -153,6 +153,106 @@ fn expand_cwd(cwd: &str, home: Option<&str>) -> Option<String> {
     cwd.strip_prefix("~/").map(|rest| format!("{home}/{rest}"))
 }
 
+/// Ordered full paths of the rows the browser is actually showing
+/// (hidden-filtered, no ".." row): the list a shift-click range
+/// select indexes into, mirroring the SFTP pane's
+/// `visible_entry_paths_in_pane`.
+pub(crate) fn visible_entry_paths(files: &crate::state::PaneFiles) -> Vec<String> {
+    files
+        .entries
+        .iter()
+        .filter(|e| files.show_hidden || !e.name.starts_with('.'))
+        .map(|e| files_join(&files.path, &e.name))
+        .collect()
+}
+
+/// `(full path, is_dir)` for every selected row still present in the
+/// listing, in listing order. Feeds the bulk delete confirm, the
+/// selection drag-out and the ring-less Del; a selection only ever
+/// contains visible rows (they are the only clickable ones), so no
+/// hidden filter is needed here.
+pub(crate) fn selected_items(files: &crate::state::PaneFiles) -> Vec<(String, bool)> {
+    files
+        .entries
+        .iter()
+        .filter(|e| files.selected.iter().any(|s| files_join(&files.path, &e.name) == *s))
+        .map(|e| (files_join(&files.path, &e.name), e.is_dir))
+        .collect()
+}
+
+/// Build the drag-out payload (issue #167) for a pressed sidebar row:
+/// the whole current selection when the row is part of it, else just
+/// that row. Only FILES travel (a directory needs recursive
+/// descriptors the drag data object doesn't build yet, matching the
+/// SFTP pane's rule), capped like it too; `None` when there is
+/// nothing to carry. Returns `(payload, ghost label)`.
+///
+/// Deliberately does NOT ask `drag_out::supported()`: that is a
+/// platform answer (`cfg!(windows)`), not a fact about the selection,
+/// and asking it here made the whole function unreachable off Windows
+/// including from a unit test, which is where the selection rules are
+/// worth pinning. The caller gates on it.
+pub(crate) fn sidebar_drag_out_payload(
+    files: &crate::state::PaneFiles,
+    path: &str,
+    is_dir: bool,
+) -> Option<(crate::drag_out::DragOutPayload, String)> {
+    const MAX_DRAG_OUT_FILES: usize = 64;
+    if is_dir {
+        return None;
+    }
+    let mut items: Vec<String> = if files.selected.iter().any(|p| p == path) {
+        files.selected.clone()
+    } else {
+        vec![path.to_string()]
+    };
+    items.retain(|p| {
+        files
+            .entries
+            .iter()
+            .any(|e| !e.is_dir && files_join(&files.path, &e.name) == *p)
+    });
+    if items.is_empty() || items.len() > MAX_DRAG_OUT_FILES {
+        return None;
+    }
+    let label = if items.len() > 1 {
+        format!(
+            "{} {}",
+            items.len(),
+            crate::i18n::t("sftp_log_items"),
+        )
+    } else {
+        files_basename(&items[0])
+    };
+    let payload = match files.client.as_ref()? {
+        crate::local_files::FilesClient::Local(_) => {
+            crate::drag_out::DragOutPayload::Local(
+                items.into_iter().map(std::path::PathBuf::from).collect(),
+            )
+        }
+        crate::local_files::FilesClient::Sftp(client) => {
+            let files = items
+                .into_iter()
+                .map(|p| {
+                    let name = files_basename(&p);
+                    let size = files
+                        .entries
+                        .iter()
+                        .find(|e| e.name == name)
+                        .map(|e| e.size)
+                        .unwrap_or(0);
+                    crate::drag_out::RemoteDragFile { path: p, name, size }
+                })
+                .collect();
+            crate::drag_out::DragOutPayload::Remote {
+                client: client.clone(),
+                files,
+            }
+        }
+    };
+    Some((payload, label))
+}
+
 /// Cap per host, matching the per-pane dropdown's own cap: the list is
 /// there to be scanned, not archived.
 const FILES_RECENT_CAP: usize = 20;
@@ -252,6 +352,7 @@ impl Oryxis {
                 SidebarFilesMessage::ShowSidebarFilesRowMenu(..)
                 | SidebarFilesMessage::ShowSidebarFilesBackgroundMenu
                 | SidebarFilesMessage::SidebarFilesShowProperties(..)
+                | SidebarFilesMessage::SidebarFilesCopySelectionPaths
             ) => self.handle_sidebar_files_menus(m),
             m @ (
                 SidebarFilesMessage::SidebarFilesStartRename(..)
@@ -262,9 +363,13 @@ impl Oryxis {
                 | SidebarFilesMessage::SidebarFilesNewEntryCommit
                 | SidebarFilesMessage::SidebarFilesDelete(..)
                 | SidebarFilesMessage::SidebarFilesDeleteConfirmed(..)
+                | SidebarFilesMessage::SidebarFilesDeleteSelection(..)
+                | SidebarFilesMessage::SidebarFilesDeleteConfirmedSelection(..)
             ) => self.handle_sidebar_files_entries(m),
             m @ (
                 SidebarFilesMessage::SidebarFilesDownload(..)
+                | SidebarFilesMessage::SidebarFilesDownloadSelection
+                | SidebarFilesMessage::SidebarFilesDownloadSelectionPicked(..)
                 | SidebarFilesMessage::SidebarFilesDownloadPicked(..)
                 | SidebarFilesMessage::SidebarFilesUploadInto(..)
                 | SidebarFilesMessage::SidebarFilesUploadPicked(..)
@@ -293,6 +398,19 @@ impl Oryxis {
                 p.files.client.as_ref().is_some_and(|c| c.is_local())
                     || (p.session.is_none()
                         && matches!(p.origin, crate::state::PaneOrigin::Local(_)))
+            })
+    }
+
+    /// Whether the sidebar Files selection is a multi-selection that
+    /// contains `path` (the row the context menu opened on). The row
+    /// menu collapses to the bulk actions (Copy N paths / Delete N
+    /// items) when so, mirroring the SFTP pane.
+    pub(crate) fn sidebar_files_multi(&self, path: &str) -> bool {
+        self.active_tab
+            .and_then(|i| self.tabs.get(i))
+            .map(|t| t.active())
+            .is_some_and(|p| {
+                p.files.selected.len() > 1 && p.files.selected.iter().any(|s| s == path)
             })
     }
 
@@ -483,6 +601,39 @@ fn op_then_list(
     )
 }
 
+/// Delete N entries then re-list once, all on the sidebar browser's
+/// channel: the bulk sibling of `op_then_list` (a multi-selection
+/// delete must not re-list once per row). A failing delete stops the
+/// walk with the error, like the SFTP pane's bulk walk.
+fn bulk_delete_then_list(
+    client: crate::local_files::FilesClient,
+    list_path: String,
+    pane_id: Uuid,
+    seq: u64,
+    targets: Vec<(String, bool)>,
+) -> Task<Message> {
+    Task::perform(
+        async move {
+            for (path, is_dir) in targets {
+                let result = if is_dir {
+                    client.remove_dir_recursive(&path).await
+                } else {
+                    client.remove_file(&path).await
+                };
+                if let Err(e) = result {
+                    return Err(e.to_string());
+                }
+            }
+            let entries = client.list_dir(&list_path).await.map_err(|e| e.to_string())?;
+            Ok::<_, String>((list_path, entries))
+        },
+        move |result| match result {
+            Ok((path, entries)) => Message::SidebarFiles(SidebarFilesMessage::SidebarFilesListed(pane_id, seq, path, entries)),
+            Err(e) => Message::SidebarFiles(SidebarFilesMessage::SidebarFilesError(pane_id, seq, e)),
+        },
+    )
+}
+
 /// One directory listing on the sidebar browser's channel. `seq` is the
 /// request stamp compared on completion (latest request wins).
 /// `pub(crate)`: the OS-drop upload refreshes the visible listing on
@@ -617,5 +768,95 @@ mod tests {
         // Remote POSIX paths never trip the detection.
         assert!(!is_windows_path("/var/c:d"));
         assert!(is_windows_path(r"C:\Users"));
+    }
+
+    fn dir_entry(name: &str) -> oryxis_ssh::SftpEntry {
+        oryxis_ssh::SftpEntry {
+            is_dir: true,
+            ..entry(name, 0)
+        }
+    }
+
+    #[test]
+    fn visible_paths_follow_the_listing_and_hidden_filter() {
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![
+                entry("a.conf", 10),
+                oryxis_ssh::SftpEntry {
+                    name: ".hidden".to_string(),
+                    ..entry(".hidden", 0)
+                },
+            ],
+            ..Default::default()
+        };
+        // Hidden rows are invisible to a shift-click range, exactly as
+        // they are to the mouse.
+        assert_eq!(visible_entry_paths(&files), vec!["/srv/a.conf"]);
+        files.show_hidden = true;
+        assert_eq!(
+            visible_entry_paths(&files),
+            vec!["/srv/a.conf", "/srv/.hidden"]
+        );
+    }
+
+    #[test]
+    fn selected_items_returns_listing_rows_not_stale_paths() {
+        let files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", 10), dir_entry("docs")],
+            selected: vec!["/srv/a.conf".to_string(), "/srv/gone".to_string()],
+            ..Default::default()
+        };
+        // The stale path (already deleted from the listing) does not
+        // produce a target, and directories report `is_dir`.
+        assert_eq!(selected_items(&files), vec![("/srv/a.conf".to_string(), false)]);
+    }
+
+    #[test]
+    fn drag_out_payload_carries_the_selection() {
+        let files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![
+                entry("a.conf", 10),
+                entry("b.conf", 20),
+                entry("c.conf", 30),
+                dir_entry("docs"),
+            ],
+            selected: vec![
+                "/srv/a.conf".to_string(),
+                "/srv/b.conf".to_string(),
+                "/srv/docs".to_string(),
+            ],
+            client: Some(crate::local_files::FilesClient::Local(
+                crate::local_files::LocalFs,
+            )),
+            ..Default::default()
+        };
+        // Pressing a selected FILE row drags every file of the
+        // selection; the directory stays behind (no recursive payload).
+        let (payload, label) = sidebar_drag_out_payload(&files, "/srv/b.conf", false)
+            .expect("a file row in the selection arms a drag-out");
+        assert!(label.contains('2'), "label should show the count: {label}");
+        match payload {
+            crate::drag_out::DragOutPayload::Local(paths) => {
+                assert_eq!(paths.len(), 2);
+                assert!(paths.contains(&std::path::PathBuf::from("/srv/a.conf")));
+                assert!(paths.contains(&std::path::PathBuf::from("/srv/b.conf")));
+            }
+            other => panic!("expected a Local payload, got {other:?}"),
+        }
+        // Pressing a directory row never arms (the old rule), and an
+        // outside-of-the-selection row drags just itself.
+        assert!(sidebar_drag_out_payload(&files, "/srv/docs", true).is_none());
+        let (payload, label) = sidebar_drag_out_payload(&files, "/srv/c.conf", false)
+            .expect("an unselected file row drags itself");
+        assert_eq!(label, "c.conf");
+        match payload {
+            crate::drag_out::DragOutPayload::Local(paths) => {
+                assert_eq!(paths, vec![std::path::PathBuf::from("/srv/c.conf")]);
+            }
+            other => panic!("expected a Local payload, got {other:?}"),
+        }
     }
 }

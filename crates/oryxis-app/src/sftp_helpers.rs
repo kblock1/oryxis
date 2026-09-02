@@ -121,6 +121,50 @@ pub(crate) fn ensure_local_space(dir: &std::path::Path, need: u64) -> Result<(),
 
 /// Join a basename onto a POSIX directory path, handling the root case
 /// (which would otherwise produce `//foo`).
+/// Title + detail for a "Delete" confirmation, from the targets it
+/// acts on. A single target shows its name and, for a directory, the
+/// recursive hint; a bulk delete shows the count and the folder-vs-file
+/// breakdown, so the blast radius is on screen before the button is.
+///
+/// ONE owner because two surfaces ask the same question and answer it
+/// on different widgets: the dual-pane SFTP modal (`delete_confirm_modal`)
+/// and the sidebar Files browser's `ErrorDialog`. The wording lived in
+/// the first and was copied verbatim into the second, which is how the
+/// two drift the next time a plural or a locale is fixed in only one.
+pub(crate) fn delete_confirm_copy(targets: &[(&str, bool)]) -> (String, String) {
+    use crate::i18n::t;
+    if let [(path, is_dir)] = targets {
+        let name = path
+            .rsplit(['/', '\\'])
+            .find(|s| !s.is_empty())
+            .unwrap_or(path);
+        let detail = if *is_dir {
+            format!("\"{}\", {}", name, t("folder_and_contents"))
+        } else {
+            format!("\"{name}\"")
+        };
+        return (t("delete_item_question").to_string(), detail);
+    }
+    let folders = targets.iter().filter(|(_, d)| *d).count();
+    let files = targets.len() - folders;
+    let detail = match (folders, files) {
+        (0, n) => format!("{} {}", n, t("files_lower")),
+        (n, 0) => format!("{} {}", n, t("folders_recursive_lower")),
+        (f, fi) => format!(
+            "{} {} {} {} {}",
+            f,
+            t("folders_recursive_lower"),
+            t("and"),
+            fi,
+            t("files_lower"),
+        ),
+    };
+    (
+        t("delete_n_items_question").replacen("{n}", &targets.len().to_string(), 1),
+        detail,
+    )
+}
+
 pub(crate) fn remote_join(dir: &str, basename: &str) -> String {
     if dir == "/" {
         format!("/{}", basename)

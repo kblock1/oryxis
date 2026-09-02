@@ -62,6 +62,141 @@ impl Oryxis {
                     },
                 )
             }
+            SidebarFilesMessage::SidebarFilesDownloadSelection => {
+                // Bulk sibling of the single download: a directory picker
+                // instead of a save dialog, then every selected entry
+                // enqueues under it (directories walk recursively).
+                self.overlay = None;
+                let Some(pane) = self.active_pane_mut() else {
+                    return Task::none();
+                };
+                // A local browser has nothing to download (issue #145).
+                if pane.files.client.as_ref().and_then(|c| c.sftp()).is_none() {
+                    return Task::none();
+                }
+                // The selection as it stands in the listing; snapshotted
+                // here so a navigation while the dialog is open cannot
+                // shift what gets downloaded.
+                let targets = super::selected_items(&pane.files);
+                if targets.is_empty() {
+                    return Task::none();
+                }
+                let pane_id = pane.id;
+                let start = self
+                    .last_download_dir
+                    .clone()
+                    .unwrap_or_else(|| self.default_download_dir());
+                Task::perform(
+                    async move {
+                        rfd::AsyncFileDialog::new()
+                            .set_directory(&start)
+                            .pick_folder()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    move |dest| match dest {
+                        Some(dest) => Message::SidebarFiles(
+                            SidebarFilesMessage::SidebarFilesDownloadSelectionPicked(
+                                pane_id,
+                                dest.to_string_lossy().into_owned(),
+                                targets,
+                            ),
+                        ),
+                        None => Message::NoOp,
+                    },
+                )
+            }
+            SidebarFilesMessage::SidebarFilesDownloadSelectionPicked(pane_id, dir, targets) => {
+                // The dialog resolved later, so the pane is resolved by
+                // id like any completion: the user is free to switch tabs
+                // while it is open.
+                let Some(pane) = self.pane_by_id_any_tab(pane_id) else {
+                    return Task::none();
+                };
+                let Some(client) = pane.files.client.as_ref().and_then(|c| c.sftp().cloned())
+                else {
+                    return Task::none();
+                };
+                if targets.is_empty() {
+                    return Task::none();
+                }
+                // Seed the next dialog with the folder this one landed in
+                // (see `SidebarFilesDownload`).
+                self.last_download_dir = Some(std::path::PathBuf::from(&dir));
+                let concurrency = self.sftp_concurrency();
+                let label = if targets.len() == 1 {
+                    files_basename(&targets[0].0)
+                } else {
+                    format!(
+                        "{} {}",
+                        targets.len(),
+                        crate::i18n::t("sftp_log_items"),
+                    )
+                };
+                // Same queue machinery as the single download: directories
+                // push their root then walk recursively into the queue
+                // (the SFTP pane's batch rule), so a selected folder
+                // arrives with all of its contents and the progress bar
+                // has real byte totals.
+                let dir_path = std::path::PathBuf::from(&dir);
+                Task::perform(
+                    async move {
+                        let mut queue = std::collections::VecDeque::new();
+                        for (remote_path, is_dir) in &targets {
+                            let target = dir_path.join(files_basename(remote_path));
+                            if *is_dir {
+                                queue.push_back(crate::state::TransferItem {
+                                    src: remote_path.clone(),
+                                    dst: target.to_string_lossy().into_owned(),
+                                    is_dir: true,
+                                    size: None,
+                                });
+                                crate::sftp_helpers::walk_remote_for_download(
+                                    &client,
+                                    remote_path,
+                                    &target,
+                                    &mut queue,
+                                )
+                                .await?;
+                            } else {
+                                queue.push_back(crate::state::TransferItem {
+                                    src: remote_path.clone(),
+                                    dst: target.to_string_lossy().into_owned(),
+                                    is_dir: false,
+                                    size: client.stat(remote_path).await.ok().map(|s| s.size),
+                                });
+                            }
+                        }
+                        if queue.is_empty() {
+                            return Ok(None);
+                        }
+                        let clients = crate::sftp_helpers::build_client_pool(client, concurrency)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        Ok(Some(crate::state::TransferState::new(
+                            crate::state::TransferKind::Download,
+                            label.clone(),
+                            queue,
+                            clients,
+                            None,
+                            None,
+                            concurrency,
+                        )))
+                    },
+                    move |state| match state {
+                        // The envelope is what makes the pane the owner:
+                        // it stamps `routing_sftp`, so the runner's
+                        // accessors resolve to this pane's slot instead of
+                        // whatever SFTP surface happens to be focused.
+                        Ok(Some(state)) => Message::SftpFor(
+                            pane_id,
+                            Box::new(SftpMessage::SftpTransferQueueReady(pane_id, state)),
+                        ),
+                        Ok(None) => Message::NoOp,
+                        Err(e) => Message::SidebarFiles(SidebarFilesMessage::SidebarFilesOpToast(e)),
+                    },
+                )
+            }
             SidebarFilesMessage::SidebarFilesDownloadPicked(pane_id, path, dest, size) => {
                 // The dialog resolved later, so the pane is resolved by
                 // id like any completion: the user is free to switch tabs

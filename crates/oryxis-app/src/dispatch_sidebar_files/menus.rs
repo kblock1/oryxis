@@ -13,12 +13,43 @@ impl Oryxis {
     ) -> Task<Message> {
         match message {
             SidebarFilesMessage::ShowSidebarFilesRowMenu(path, is_dir) => {
+                // Right-click semantics (Explorer / Finder, and the SFTP
+                // pane's rule): right-clicking a row that is part of the
+                // current selection KEEPS the selection, so the menu
+                // actions apply to all of it; right-clicking an outside
+                // row re-selects just that row so the menu can never
+                // silently target a different set than the rows shown
+                // highlighted.
+                if let Some(pane) = self.active_pane_mut()
+                    && !pane.files.selected.iter().any(|p| p == &path)
+                {
+                    pane.files.selected = vec![path.clone()];
+                    pane.files.selection_anchor = Some(path.clone());
+                }
                 let anchor = self.keynav_take_menu_anchor();
                 self.overlay = Some(crate::state::OverlayState {
                     content: crate::state::OverlayContent::SidebarFilesRow { path, is_dir },
                     x: anchor.0,
                     y: anchor.1,
                 });
+            }
+            SidebarFilesMessage::SidebarFilesCopySelectionPaths => {
+                // Bulk variant of Copy path: every selected path in the
+                // browser, one per line (the SFTP pane's rule). The
+                // menu is dismissed; the selection stays, copying is
+                // not an action "on" the rows the way delete is.
+                self.overlay = None;
+                let Some(pane) = self.active_pane_mut() else {
+                    return Task::none();
+                };
+                let paths: Vec<String> = super::selected_items(&pane.files)
+                    .into_iter()
+                    .map(|(p, _)| p)
+                    .collect();
+                if paths.is_empty() {
+                    return Task::none();
+                }
+                return self.update(Message::CopyToClipboard(paths.join("\n")));
             }
             SidebarFilesMessage::ShowSidebarFilesBackgroundMenu => {
                 // Directory-level menu for the current folder; only once

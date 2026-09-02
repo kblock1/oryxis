@@ -141,6 +141,35 @@ impl Oryxis {
                     Message::SidebarFiles(SidebarFilesMessage::SidebarFilesDeleteConfirmed(path, is_dir)),
                 );
             }
+            SidebarFilesMessage::SidebarFilesDeleteSelection(targets) => {
+                // Bulk delete from a multi-selection: same shared confirm
+                // dialog, with the SFTP modal's count-aware copy (folder /
+                // file breakdown) instead of a single name.
+                self.overlay = None;
+                if targets.is_empty() {
+                    return Task::none();
+                }
+                let owned: Vec<(&str, bool)> = targets
+                    .iter()
+                    .map(|(p, d)| (p.as_str(), *d))
+                    .collect();
+                let (title, body) = crate::sftp_helpers::delete_confirm_copy(&owned);
+                drop(owned);
+                self.error_dialog = Some(crate::state::ErrorDialog {
+                    title,
+                    body,
+                    link: None,
+                    action: Some(crate::state::ErrorDialogAction {
+                        label: crate::i18n::t("delete").to_string(),
+                        message: Box::new(Message::SidebarFiles(
+                            SidebarFilesMessage::SidebarFilesDeleteConfirmedSelection(
+                                targets,
+                            ),
+                        )),
+                        danger: true,
+                    }),
+                });
+            }
             SidebarFilesMessage::SidebarFilesDeleteConfirmed(path, is_dir) => {
                 let Some(pane) = self.active_pane_mut() else {
                     return Task::none();
@@ -160,6 +189,20 @@ impl Oryxis {
                         client.remove_file(&path).await
                     }
                 });
+            }
+            SidebarFilesMessage::SidebarFilesDeleteConfirmedSelection(targets) => {
+                let Some(pane) = self.active_pane_mut() else {
+                    return Task::none();
+                };
+                let Some(client) = pane.files.client.clone() else {
+                    return Task::none();
+                };
+                let list_path = pane.files.path.clone();
+                let pane_id = pane.id;
+                pane.files.loading = true;
+                pane.files.error = None;
+                let seq = pane.files.next_req();
+                return bulk_delete_then_list(client, list_path, pane_id, seq, targets);
             }
             // The parent routed us here, so anything else is a
             // grouping mistake, not a runtime case.

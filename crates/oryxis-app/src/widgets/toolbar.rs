@@ -301,6 +301,44 @@ pub(crate) fn context_menu_item<'a>(
     .into()
 }
 
+/// Owned-label sibling of [`context_menu_item`]: the label `String` is
+/// moved into the returned element, so a label formatted at render
+/// time (counts, substitutions) doesn't need to outlive the call.
+pub(crate) fn context_menu_item_owned(
+    icon: impl Into<crate::os_icon::BrandIcon>,
+    label: String,
+    msg: Message,
+    color: Color,
+) -> Element<'static, Message> {
+    button(
+        container(
+            dir_row(vec![
+                icon.into().view(14.0, color),
+                Space::new().width(8).into(),
+                text(label).size(12).color(OryxisColors::t().text_primary).into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .align_x(dir_align_x()),
+    )
+    .on_press(msg)
+    .width(Length::Fill)
+    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
 /// Tag-filter trigger for the host dashboard toolbar, styled like the
 /// sort button. While tags are selected the button fills accent and
 /// shows the selection count next to the glyph, so a narrowed list is

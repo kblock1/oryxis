@@ -529,6 +529,24 @@ impl crate::app::Oryxis {
         )
     }
 
+    /// Owned-label sibling of [`Self::menu_item`]: for labels built at
+    /// render time (counts, substitutions). The label `String` moves
+    /// into the returned element, so there is no borrow to dangle.
+    pub(crate) fn menu_item_owned(
+        &self,
+        icon: impl Into<crate::os_icon::BrandIcon>,
+        label: String,
+        msg: Message,
+        color: iced::Color,
+    ) -> iced::Element<'static, Message> {
+        self.modal_nav_slot(
+            RowAction::activate(msg.clone()),
+            4.0,
+            false,
+            crate::widgets::context_menu_item_owned(icon, label, msg, color),
+        )
+    }
+
     /// Clear the Settings content recording. Each Settings section
     /// view calls this at the top of its render pass, then records
     /// its actionable rows through `settings_nav_slot`.

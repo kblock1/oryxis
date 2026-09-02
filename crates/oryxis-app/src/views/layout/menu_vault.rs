@@ -14,6 +14,52 @@ impl Oryxis {
         path: String,
         is_dir: bool,
     ) -> Element<'_, Message> {
+        let secondary = OryxisColors::t().text_secondary;
+        // A multi-selection (SFTP pane's rule): the menu collapses to
+        // the bulk actions that make sense over a whole selection. The
+        // selection is whatever the right-click kept; the builder runs
+        // at render time, right after `ShowSidebarFilesRowMenu` decided
+        // it, so it is in sync with the highlighted rows.
+        let multi = self.sidebar_files_multi(&path);
+        if multi {
+            let selection = self
+                .active_tab
+                .and_then(|i| self.tabs.get(i))
+                .map(|t| t.active())
+                .map(|p| crate::dispatch_sidebar_files::selected_items(&p.files))
+                .unwrap_or_default();
+            let n = selection.len();
+            let mut items = column![];
+            let copy_label =
+                crate::i18n::t("copy_n_paths").replacen("{n}", &n.to_string(), 1);
+            items = items.push(self.menu_item_owned(
+                iced_fonts::lucide::clipboard_copy(),
+                copy_label,
+                Message::SidebarFiles(SidebarFilesMessage::SidebarFilesCopySelectionPaths),
+                secondary,
+            ));
+            // A local browser has nothing to download (issue #145), the
+            // same gate the single-file download applies.
+            if !self.sidebar_files_is_local() {
+                let download_label =
+                    crate::i18n::t("download_n_items").replacen("{n}", &n.to_string(), 1);
+                items = items.push(self.menu_item_owned(
+                    iced_fonts::lucide::download(),
+                    download_label,
+                    Message::SidebarFiles(SidebarFilesMessage::SidebarFilesDownloadSelection),
+                    OryxisColors::t().accent,
+                ));
+            }
+            let delete_label =
+                crate::i18n::t("delete_n_items").replacen("{n}", &n.to_string(), 1);
+            items = items.push(self.menu_item_owned(
+                iced_fonts::lucide::trash(),
+                delete_label,
+                Message::SidebarFiles(SidebarFilesMessage::SidebarFilesDeleteSelection(selection)),
+                OryxisColors::t().error,
+            ));
+            return items.into();
+        }
         // Directory the "Open SFTP session here" lands on: the
         // folder itself, or a file's containing folder.
         let sftp_dir = if is_dir {
@@ -23,7 +69,6 @@ impl Oryxis {
                 .unwrap_or_else(|| "/".to_string())
         };
         let name = crate::dispatch_sidebar_files::files_basename(&path);
-        let secondary = OryxisColors::t().text_secondary;
         // A local browser (issue #145): transfers, edit-in-place, the
         // dual-pane promote and chmod-properties have no local meaning;
         // files open with the OS instead.

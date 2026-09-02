@@ -323,9 +323,15 @@ pub(crate) struct PaneFiles {
     pub nav_replay: bool,
     /// Whether the path combo-box dropdown is open.
     pub path_history_open: bool,
-    /// Full remote path of the currently selected row, if any.
-    /// Cleared on navigation / mount / disconnect.
-    pub selected: Option<String>,
+    /// Full paths of the selected rows (the SFTP pane's multi-select
+    /// rule): a plain click selects one, Ctrl/Cmd-click toggles,
+    /// Shift-click extends a range from `selection_anchor`. Cleared on
+    /// navigation / mount / disconnect.
+    pub selected: Vec<String>,
+    /// Anchor row for shift-click range selection (mirrors the SFTP
+    /// pane's `selection_anchor`); follows the last click that set a
+    /// single selection or toggled a row.
+    pub selection_anchor: Option<String>,
     /// Timestamp + path of the last single click, for double-click
     /// detection (matching the SFTP pane's rule).
     pub last_click: Option<(std::time::Instant, String)>,
@@ -372,7 +378,8 @@ impl PaneFiles {
         // end of it.
         self.path_history.clear();
         self.path_history_open = false;
-        self.selected = None;
+        self.selected.clear();
+        self.selection_anchor = None;
         self.last_click = None;
     }
 

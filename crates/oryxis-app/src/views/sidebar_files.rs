@@ -280,6 +280,7 @@ impl Oryxis {
                     up,
                     None,
                     false,
+                    false,
                     pos,
                 ));
                 pos += 1;
@@ -344,7 +345,7 @@ impl Oryxis {
                 } else {
                     Message::Sftp(SftpMessage::SftpCopyPath(full.clone()))
                 };
-                let is_selected = files.selected.as_deref() == Some(full.as_str());
+                let is_selected = files.selected.iter().any(|s| s == &full);
                 list = list.push(self.files_row(
                     &entry.name,
                     entry.is_dir,
@@ -354,6 +355,7 @@ impl Oryxis {
                     key_activate,
                     Some(full),
                     is_selected,
+                    is_selected && files.selected.len() > 1,
                     pos,
                 ));
                 pos += 1;
@@ -476,6 +478,10 @@ impl Oryxis {
     /// records `key_activate` (Enter = the direct action: folders
     /// navigate, files copy their path). `full_path` enables the
     /// hover-revealed Copy path action; the ".." row has none.
+    /// `multi_selected` hides that single-row copy chip: inside a
+    /// multi-selection the bulk actions live in the right-click menu,
+    /// and a chip that copied only one of several highlighted paths
+    /// would read as a surprise.
     #[allow(clippy::too_many_arguments)]
     fn files_row<'a>(
         &'a self,
@@ -487,6 +493,7 @@ impl Oryxis {
         key_activate: Message,
         full_path: Option<String>,
         selected: bool,
+        multi_selected: bool,
         pos: usize,
     ) -> Element<'a, Message> {
         let c = OryxisColors::t();
@@ -548,9 +555,10 @@ impl Oryxis {
             });
 
         // Hover-revealed floating Copy path (the card-action convention;
-        // the ring border stays the keyboard affordance).
-        let row_el: Element<'a, Message> = match (&full_path, hovered) {
-            (Some(full), true) => {
+        // the ring border stays the keyboard affordance). Hidden on a
+        // row inside a multi-selection (see `multi_selected`).
+        let row_el: Element<'a, Message> = match (&full_path, hovered, multi_selected) {
+            (Some(full), true, false) => {
                 let actions = container(action_btn(
                     iced_fonts::lucide::clipboard_copy(),
                     Message::Sftp(SftpMessage::SftpCopyPath(full.clone())),

@@ -32,11 +32,12 @@
 //!
 //! Delete has a second, RING-LESS reading, and only on Files: a click
 //! there selects a row and deliberately drops the ring, so the key
-//! falls back to the mouse selection (`sidebar_files_selected_entry`),
-//! which is the select-then-Del pair the SFTP pane offers. That
-//! fallback is what makes the inline-edit guard in that helper load
-//! bearing: this layer engages on the cursor alone, so a Delete typed
-//! into a Files input must not reach a file.
+//! falls back to the mouse selection
+//! (`sidebar_files_selected_entries`, the whole multi-selection), which
+//! is the select-then-Del pair the SFTP pane offers. That fallback is
+//! what makes the inline-edit guard in that helper load bearing: this
+//! layer engages on the cursor alone, so a Delete typed into a Files
+//! input must not reach a file.
 
 use iced::keyboard;
 use iced::Task;
@@ -162,27 +163,27 @@ impl Oryxis {
         &self.keynav.sidebar_items[side.idx()]
     }
 
-    /// The Files browser's mouse selection as a delete target
-    /// (`(full path, is_dir)`). `None` on any other tab, with no
-    /// selection, or when the selection no longer matches the listing
-    /// (a refresh raced the key): a stale selection must never guess
-    /// `is_dir`, so the key simply isn't consumed.
-    ///
-    /// Also `None` while an inline edit (path / rename / new entry)
-    /// owns the keyboard, which is the SFTP pane's `editing` guard
-    /// under another name. This layer engages on the CURSOR being
-    /// over the sidebar, and the ring goes quiet on an input row, so
-    /// without it a Delete meant to erase a character forward inside
-    /// the rename field would raise the destructive confirm on the
-    /// row the mouse selected earlier, with the removal as its
-    /// default button: the next Enter, the one that was going to
-    /// commit the rename, would delete the file instead. The refusal
-    /// lives HERE rather than in the Delete arm so a later ring-less
-    /// caller (the Menu key is the obvious one) inherits it.
-    fn sidebar_files_selected_entry(
+    /// The Files browser's mouse selection as delete targets
+    /// (`(full path, is_dir)` pairs, in listing order). `None` on any
+    /// other tab, with no selection, or when the selection no longer
+    /// matches the listing (a refresh raced the key): a stale
+    /// selection must never guess `is_dir`, so the key simply isn't
+    /// consumed. Also `None` while an inline edit (path / rename /
+    /// new entry) owns the keyboard, which is the SFTP pane's
+    /// `editing` guard under another name. This layer engages on the
+    /// CURSOR being over the sidebar, and the ring goes quiet on an
+    /// input row, so without it a Delete meant to erase a character
+    /// forward inside the rename field would raise the destructive
+    /// confirm on the rows the mouse selected earlier, with the
+    /// removal as its default button: the next Enter, the one that
+    /// was going to commit the rename, would delete the files
+    /// instead. The refusal lives HERE rather than in the Delete arm
+    /// so a later ring-less caller (the Menu key is the obvious one)
+    /// inherits it.
+    fn sidebar_files_selected_entries(
         &self,
         tab: TerminalSidebarTab,
-    ) -> Option<(String, bool)> {
+    ) -> Option<Vec<(String, bool)>> {
         if tab != TerminalSidebarTab::Files {
             return None;
         }
@@ -193,16 +194,8 @@ impl Oryxis {
         {
             return None;
         }
-        let path = pane.files.selected.clone()?;
-        let is_dir = pane
-            .files
-            .entries
-            .iter()
-            .find(|e| {
-                crate::dispatch_sidebar_files::files_join(&pane.files.path, &e.name) == path
-            })?
-            .is_dir;
-        Some((path, is_dir))
+        let selected = crate::dispatch_sidebar_files::selected_items(&pane.files);
+        (!selected.is_empty()).then_some(selected)
     }
 
     /// Keep the selected row visible; same best-effort relative snap
@@ -339,6 +332,40 @@ impl Oryxis {
                 // No search on Chat / Host config.
                 _ => return None,
             }
+        }
+        // Ctrl+A / Cmd+A on the Files tab: select every visible row,
+        // anchored on the first so a follow-up shift-click keeps
+        // well-defined semantics (the SFTP pane's rule). An inline
+        // edit (path / rename / new entry) owns the key: there it is
+        // the input's own select-all. Gated on the same sidebar
+        // engagement as everything here, so a Ctrl+A meant for the
+        // terminal (readline line-start) is never stolen.
+        if tab == TerminalSidebarTab::Files
+            && (modifiers.control() || modifiers.command())
+            && !modifiers.alt()
+            && matches!(key, keyboard::Key::Character(c) if c.as_str().eq_ignore_ascii_case("a"))
+        {
+            let idx = self.active_tab?;
+            let files = &mut self.tabs.get_mut(idx)?.active_mut().files;
+            // DECLINE rather than consume while an inline edit owns the
+            // keyboard: there Ctrl+A is the text input's own select-all,
+            // and swallowing it here would leave the field with a key
+            // that does nothing. Same reason the ring-less Delete
+            // refuses in `sidebar_files_selected_entries`, and the same
+            // shape: not acting is not the same as consuming.
+            if files.path_editing.is_some()
+                || files.rename.is_some()
+                || files.new_entry.is_some()
+            {
+                return None;
+            }
+            let paths = crate::dispatch_sidebar_files::visible_entry_paths(files);
+            if paths.is_empty() {
+                return None;
+            }
+            files.selection_anchor = Some(paths[0].clone());
+            files.selected = paths;
+            return Some(Task::none());
         }
         if modifiers.control() || modifiers.alt() || modifiers.logo() {
             return None;
@@ -561,12 +588,16 @@ impl Oryxis {
                 }
                 // Files: a click selects a row AND deliberately drops the
                 // ring (`SidebarFilesSelectRow`), so a ring-less Del acts
-                // on what the mouse selected, the select-then-Del pair
-                // the SFTP pane offers.
-                let (path, is_dir) = self.sidebar_files_selected_entry(tab)?;
-                Some(self.update(Message::SidebarFiles(
-                    SidebarFilesMessage::SidebarFilesDelete(path, is_dir),
-                )))
+                // on what the mouse selected: the whole multi-selection,
+                // the select-then-Del pair the SFTP pane offers.
+                let selected = self.sidebar_files_selected_entries(tab)?;
+                let msg = if selected.len() == 1 {
+                    let (path, is_dir) = selected.into_iter().next().expect("len checked");
+                    SidebarFilesMessage::SidebarFilesDelete(path, is_dir)
+                } else {
+                    SidebarFilesMessage::SidebarFilesDeleteSelection(selected)
+                };
+                Some(self.update(Message::SidebarFiles(msg)))
             }
             Named::Escape => {
                 // Esc is the "give me the terminal back" key: drop the

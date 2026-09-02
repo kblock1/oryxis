@@ -70,9 +70,24 @@ pub enum SidebarFilesMessage {
     /// then the confirmed op (recursive for directories).
     SidebarFilesDelete(String, bool),
     SidebarFilesDeleteConfirmed(String, bool),
+    /// Bulk delete of the whole current selection (arm the same shared
+    /// confirm, count-aware copy) and its confirmed op.
+    SidebarFilesDeleteSelection(Vec<(String, bool)>),
+    SidebarFilesDeleteConfirmedSelection(Vec<(String, bool)>),
+    /// Copy every path of the current selection to the clipboard, one
+    /// per line (the SFTP pane's bulk-copy rule).
+    SidebarFilesCopySelectionPaths,
     /// Download a file to a local destination picked via the OS dialog.
     /// Only opens the dialog; a cancelled one ends the flow untouched.
     SidebarFilesDownload(String),
+    /// Bulk download of the whole selection (files and folders) into a
+    /// directory picked via the OS dialog.
+    SidebarFilesDownloadSelection,
+    /// The folder dialog returned a destination: enqueue every selected
+    /// entry under it. Payload: pane id, destination directory, the
+    /// selected `(remote path, is_dir)` targets (directories walk
+    /// recursively like the SFTP pane's batch download).
+    SidebarFilesDownloadSelectionPicked(Uuid, String, Vec<(String, bool)>),
     /// The save dialog returned a destination: enqueue the download on
     /// the pane's own runner. Payload: pane id, remote path, local
     /// destination file, and the size the listing reported when the row

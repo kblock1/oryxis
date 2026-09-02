@@ -111,16 +111,95 @@ impl Oryxis {
 }
 
 /// A listing replaced the rows: the double-click stamp is stale by
-/// definition, and the selection survives only when its entry is
-/// still present (a same-directory refresh, an op_then_list
-/// completion); a listing of any other directory drops it.
+/// definition, and the selection survives only while every selected
+/// entry is still present (a same-directory refresh, an op_then_list
+/// completion); a listing of any other directory drops it. The
+/// shift-click anchor follows the same rule, so a later shift-click
+/// never extends from a row that is no longer there.
 fn prune_selection(files: &mut crate::state::PaneFiles, path: &str) {
     files.last_click = None;
-    let keep = files
+    if files.selected.is_empty() {
+        files.selection_anchor = None;
+        return;
+    }
+    files
         .selected
-        .as_deref()
-        .is_some_and(|s| files.entries.iter().any(|e| files_join(path, &e.name) == s));
-    if !keep {
-        files.selected = None;
+        .retain(|s| files.entries.iter().any(|e| files_join(path, &e.name) == *s));
+    if files.selected.is_empty() {
+        files.selection_anchor = None;
+    } else {
+        files.selection_anchor = files.selection_anchor.as_ref().and_then(|a| {
+            files
+                .entries
+                .iter()
+                .any(|e| files_join(path, &e.name) == *a)
+                .then(|| a.clone())
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(name: &str, is_dir: bool) -> oryxis_ssh::SftpEntry {
+        oryxis_ssh::SftpEntry {
+            name: name.to_string(),
+            is_dir,
+            is_symlink: false,
+            size: 0,
+            mtime: None,
+            permissions: None,
+            uid: None,
+            gid: None,
+            owner: None,
+            group: None,
+        }
+    }
+
+    #[test]
+    fn prune_drops_deleted_rows_and_their_anchor() {
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", false), entry("b.conf", false)],
+            selected: vec!["/srv/a.conf".to_string(), "/srv/gone".to_string()],
+            selection_anchor: Some("/srv/gone".to_string()),
+            ..Default::default()
+        };
+        prune_selection(&mut files, "/srv");
+        assert_eq!(files.selected, vec!["/srv/a.conf".to_string()]);
+        // The anchor's row no longer exists, so a later shift-click
+        // must not extend from it.
+        assert_eq!(files.selection_anchor, None);
+    }
+
+    #[test]
+    fn prune_keeps_surviving_anchor() {
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", false), entry("b.conf", false)],
+            selected: vec!["/srv/a.conf".to_string(), "/srv/b.conf".to_string()],
+            selection_anchor: Some("/srv/a.conf".to_string()),
+            ..Default::default()
+        };
+        prune_selection(&mut files, "/srv");
+        assert_eq!(
+            files.selected,
+            vec!["/srv/a.conf".to_string(), "/srv/b.conf".to_string()]
+        );
+        assert_eq!(files.selection_anchor.as_deref(), Some("/srv/a.conf"));
+    }
+
+    #[test]
+    fn prune_clears_an_empty_selection() {
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", false)],
+            selection_anchor: Some("/srv/a.conf".to_string()),
+            ..Default::default()
+        };
+        prune_selection(&mut files, "/srv");
+        assert!(files.selected.is_empty());
+        assert_eq!(files.selection_anchor, None);
     }
 }
