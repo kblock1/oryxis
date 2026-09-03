@@ -117,8 +117,9 @@ impl Oryxis {
     /// would be worse than a rule.
     ///
     /// `from` is the tab the drag STARTED in, recorded when the widget
-    /// picked the pane up, because neither the handle nor `active_tab`
-    /// can name it by now: see `Oryxis::pane_drag_from`.
+    /// picked the pane up: a `pane_grid::Pane` handle is minted per grid
+    /// and unique only within one, so the tab cannot be found from the
+    /// handle afterwards. See `Oryxis::pane_drag_from`.
     pub(crate) fn move_pane_to_hovered_tab(
         &mut self,
         from: Option<(uuid::Uuid, PaneHandle)>,
@@ -169,6 +170,7 @@ impl Oryxis {
         let Some(pane) = self.tabs[src_idx].take_pane(handle) else {
             return false;
         };
+        let pane_id = pane.id;
         let dest = &mut self.tabs[dest_idx];
         // Per TAB rather than per pane, so a pane arriving from a
         // keepalive tab would otherwise start idling out.
@@ -183,11 +185,22 @@ impl Oryxis {
         if let Some(first) = landed.first() {
             dest.focused = *first;
         }
-        // `active_tab` is not set here, and the view still follows the
-        // pane: the release that ended the drag also reaches the chip's
-        // own button, which selects that tab. Setting it as well would be
-        // a second opinion about the same click, and the chip's is the
-        // one that would win anyway.
+        // A pane still dialling keeps its connect screen, and that
+        // screen is drawn over the TAB the progress names, so the
+        // progress has to name the tab the pane is in now or the dial
+        // keeps covering the tab it left.
+        if let Some(progress) = self.connecting.as_mut()
+            && progress.pane_id == pane_id
+        {
+            progress.tab_idx = dest_idx;
+        }
+        // The view follows the pane, and nothing else makes it: the
+        // chip is a `button`, and a button only publishes on a release
+        // whose PRESS began on it, which this one did not (it began on
+        // the pane's header). Same landing the tab-into-grid drop above
+        // gives the panes it moves.
+        self.active_tab = Some(dest_idx);
+        self.remember_terminal_tab_focus(dest_idx);
         true
     }
 

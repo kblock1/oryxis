@@ -1322,13 +1322,10 @@ pub struct Oryxis {
     /// handle there (issue #208 item 4). Recorded when the widget picks
     /// the pane up, read when it reports the release.
     ///
-    /// Not derivable at release time, and both halves are the reason.
-    /// A `pane_grid::Pane` handle is minted per grid and is only unique
-    /// within one, so the tab cannot be found by searching for it. And
-    /// `active_tab` cannot stand in: the release that ends the drag also
-    /// reaches the destination chip's own button, which publishes on the
-    /// RELEASE rather than the press, so by the time the drag event is
-    /// handled the active tab may already BE the destination.
+    /// Not derivable at release time: a `pane_grid::Pane` handle is
+    /// minted per grid and is only unique within one, so the tab cannot
+    /// be found by searching for the handle, and the handle only means
+    /// something next to the tab it was minted in.
     pub(crate) pane_drag_from: Option<(uuid::Uuid, iced::widget::pane_grid::Pane)>,
     /// Live width of the right-side editor drawer (host / key / identity /
     /// snippet / port-forward / cloud forms, all of them: they share one

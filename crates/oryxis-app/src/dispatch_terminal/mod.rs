@@ -247,12 +247,9 @@ impl Oryxis {
                 //
                 // `Picked` only records where the pane came from. The
                 // drag itself is still entirely the widget's, preview
-                // included; what cannot be recovered later is the SOURCE.
-                // A pane handle is minted per grid and unique only within
-                // one, and `active_tab` is no help either: this release
-                // also reaches the destination chip's button, which fires
-                // on the release rather than the press, so the active tab
-                // may already be the destination by now.
+                // included; what cannot be recovered later is the SOURCE,
+                // because a pane handle is minted per grid and unique
+                // only within one.
                 if let iced::widget::pane_grid::DragEvent::Picked { pane } = ev {
                     if let Some(id) = self.active_tab.and_then(|i| self.tabs.get(i)).map(|t| t._id)
                     {
@@ -262,7 +259,9 @@ impl Oryxis {
                 }
                 if let iced::widget::pane_grid::DragEvent::Canceled { pane } = ev {
                     let from = self.pane_drag_from.take();
-                    self.move_pane_to_hovered_tab(from, pane);
+                    if self.move_pane_to_hovered_tab(from, pane) {
+                        return self.tab_scroll_to_active();
+                    }
                     return Task::none();
                 }
                 self.pane_drag_from = None;
@@ -575,6 +574,15 @@ impl Oryxis {
                 });
                 let dest_idx = self.tabs.len();
                 self.tabs.push(tab);
+                // A pane still dialling keeps its connect screen, and
+                // that screen is drawn over the TAB the progress names,
+                // so the progress has to name the tab the pane is in now
+                // or the dial keeps covering the tab it left.
+                if let Some(progress) = self.connecting.as_mut()
+                    && progress.pane_id == pane_id
+                {
+                    progress.tab_idx = dest_idx;
+                }
                 self.active_tab = Some(dest_idx);
                 self.remember_terminal_tab_focus(dest_idx);
                 self.active_view = crate::state::View::Terminal;
